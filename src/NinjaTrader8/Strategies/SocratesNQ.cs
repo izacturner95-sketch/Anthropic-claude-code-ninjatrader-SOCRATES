@@ -119,6 +119,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				UseFourHourPivots = true;
 				OpeningRangeMinutes = 15;
 				ZoneHalfWidthAtr = 0.25;
+				UseOrderBlocks = true;
+				OrderBlockRequireImbalance = true;
+				OrderBlockDisplacementAtr = 1.0;
+				OrderBlockMaxLookback = 10;
+				OrderBlockZone = OrderBlockZoneMode.FullRange;
 
 				// --- Step 2: liquidity ---
 				MinPenetrationAtr = 0.10;
@@ -196,6 +201,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 						MinPenetrationAtr = MinPenetrationAtr,
 						MinPenetrationPoints = MinPenetrationPoints,
 						MaxBarsToReclaim = MaxBarsToReclaim
+					},
+					OrderBlocks = new OrderBlockSettings
+					{
+						Enabled = UseOrderBlocks,
+						RequireImbalance = OrderBlockRequireImbalance,
+						MinDisplacementAtr = OrderBlockDisplacementAtr,
+						MaxLookbackForOrigin = OrderBlockMaxLookback,
+						ZoneMode = OrderBlockZone,
+						InvalidateOnCloseThrough = true
 					}
 				};
 
@@ -235,6 +249,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 					AddDataSeries(VixSymbol, BarsPeriodType.Minute, VixBarMinutes);
 					idxVix = next++;
 
+					// The VIX is used only to confirm direction from its own pivots and swing
+					// levels, so order block detection is off for it.
 					MarketAnalyzerSettings vixSettings = new MarketAnalyzerSettings
 					{
 						SwingStrength = SwingStrength,
@@ -245,7 +261,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 							MinPenetrationAtr = 0.10,
 							MinPenetrationPoints = 0.02,
 							MaxBarsToReclaim = MaxBarsToReclaim
-						}
+						},
+						OrderBlocks = new OrderBlockSettings { Enabled = false }
 					};
 
 					vix = new VixConfirmation(new VixConfirmationSettings
@@ -341,7 +358,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 				levelsDirty = false;
 			}
 
-			nq.Update(CurrentBar, Time[0], High[0], Low[0], Close[0], atr);
+			nq.Update(CurrentBar, Time[0], Open[0], High[0], Low[0], Close[0], atr);
+
+			if (VerboseLogging && nq.OrderBlocks.LastFormedCount > 0)
+			{
+				OrderBlock formed = nq.OrderBlocks.Active[nq.OrderBlocks.Active.Count - 1];
+				Log(string.Format("{0} order block {1:N2}-{2:N2}{3}. {4} active.",
+					formed.Kind, formed.Low, formed.High,
+					formed.HasImbalance ? " with imbalance" : string.Empty,
+					nq.OrderBlocks.Active.Count));
+			}
 
 			// Steps 2-4.
 			SetupResult result = setup.Update(nq, CurrentBar, Time[0], Open[0], High[0], Low[0], Close[0], atr);
@@ -430,7 +456,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double vixAtr = ATR(BarsArray[idxVix], AtrPeriod)[0];
 			double reference = Closes[idxVix][VixLookbackBars];
 
-			vix.Update(CurrentBars[idxVix], Times[idxVix][0],
+			vix.Update(CurrentBars[idxVix], Times[idxVix][0], Opens[idxVix][0],
 				Highs[idxVix][0], Lows[idxVix][0], Closes[idxVix][0], reference, vixAtr);
 		}
 
@@ -869,8 +895,30 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		[NinjaScriptProperty]
 		[Range(0.01, 5)]
-		[Display(Name = "Zone half-width (ATR)", Description = "How wide a level's zone is, as a multiple of ATR.", GroupName = "3. Step 1 - Context", Order = 4)]
+		[Display(Name = "Zone half-width (ATR)", Description = "How wide a swing level's zone is, as a multiple of ATR.", GroupName = "3. Step 1 - Context", Order = 4)]
 		public double ZoneHalfWidthAtr { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Use order blocks", Description = "Detect supply and demand as the last opposing candle before a displacement move.", GroupName = "3. Step 1 - Context", Order = 5)]
+		public bool UseOrderBlocks { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Order block needs imbalance", Description = "Require a three-bar fair value gap. Off produces many more, much weaker blocks.", GroupName = "3. Step 1 - Context", Order = 6)]
+		public bool OrderBlockRequireImbalance { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0.1, 10)]
+		[Display(Name = "Order block displacement (ATR)", Description = "Minimum range of the candle that moves away from the block.", GroupName = "3. Step 1 - Context", Order = 7)]
+		public double OrderBlockDisplacementAtr { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(1, 50)]
+		[Display(Name = "Order block origin lookback", Description = "How far back to search for the last opposing candle.", GroupName = "3. Step 1 - Context", Order = 8)]
+		public int OrderBlockMaxLookback { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Order block zone", Description = "FullRange uses the candle's high to low. Body uses open to close - tighter entries, more misses.", GroupName = "3. Step 1 - Context", Order = 9)]
+		public OrderBlockZoneMode OrderBlockZone { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, 5)]

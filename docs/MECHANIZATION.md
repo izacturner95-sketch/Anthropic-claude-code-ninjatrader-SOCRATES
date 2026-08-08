@@ -29,19 +29,42 @@ Levels computed exactly:
 | Overnight high / low | Globex bars from 18:00 to 09:30 ET |
 | Opening range high / low | First 15 minutes after 09:30 ET (configurable) |
 
-**Supply and demand had no formula in your spec**, so I built one: a confirmed swing
-high becomes a supply zone, a confirmed swing low becomes a demand zone. Each carries
-a band of ±0.25 × ATR rather than being a single price, because price reacts to areas
-rather than to exact numbers. Two swings within 0.5 × ATR merge into one zone and the
-zone records a "touch" — a level price keeps respecting accumulates strength.
+The book holds two further kinds of area, and the distinction matters because your
+Step 2 treats them as different events — "sweep previous highs" versus "push through
+supply".
 
-Zones further than 12 × ATR from current price are discarded.
+**Swing extremes are liquidity pools.** A confirmed swing high or low becomes a level
+with a ±0.25 × ATR band, because price reacts to areas rather than exact numbers. Two
+swings within 0.5 × ATR merge, and each merge counts as a "touch" — a level price keeps
+respecting accumulates strength. Levels further than 12 × ATR from price are discarded.
+
+**Order blocks are supply and demand** (`OrderBlocks.cs`). A bullish order block is the
+last *down* candle before an up displacement; a bearish block is the last *up* candle
+before a down displacement. Detection requires two things, because "last opposing
+candle" on its own matches something on nearly every bar:
+
+1. The displacement candle's range is at least 1.0 × ATR.
+2. It leaves an **imbalance** — a three-bar fair value gap, where the bar before and the
+   bar after do not overlap. Price moved fast enough to skip an entire range, which is
+   the footprint of size going through rather than ordinary drift.
+
+The zone spans the origin candle's full high to low by default, or its body only.
+A block stays live no matter how often it is touched, and retires the moment price
+**closes** clean through it. New blocks overlapping an existing one widen it instead of
+stacking a duplicate. Twelve stay active at most.
+
+Order blocks are detected on NQ only. The VIX uses pivots and swing levels, since
+"reacting from an important technical level" there does not need candle-level structure.
 
 | Decision I made | Parameter | Needs your sign-off |
 |---|---|---|
-| Supply/demand = swing extremes with an ATR band | `Zone half-width (ATR)` | Is this what you mean by a zone, or do you draw them from consolidation bases / order blocks? |
+| Order block = last opposing candle before displacement | `Use order blocks` | |
+| Imbalance (FVG) required | `Order block needs imbalance` | Off gives many more, much weaker blocks |
+| Displacement ≥ 1.0 × ATR | `Order block displacement (ATR)` | |
+| Zone = full candle range | `Order block zone` | `Body` is tighter: better entries, more misses |
+| Retires only on a **close** through | — | Say if a wick through should kill it |
 | Swing = 3 bars either side | `Swing strength` | 3 is responsive. 5+ finds only major turns. |
-| Classic floor pivots | — | There are also Camarilla, Woodie and Fibonacci pivot formulas. Say if you use a different one. |
+| Classic floor pivots | — | There are also Camarilla, Woodie and Fibonacci formulas. Say if you use a different one. |
 | Opening range = 15 min | `Opening range (minutes)` | |
 
 There is deliberately **no separate "is price approaching an area" gate**. A sweep in
@@ -143,7 +166,7 @@ Setups needing a stop tighter than 20 ticks or wider than 200 are skipped.
 
 | Decision I made | Parameter | Needs your sign-off |
 |---|---|---|
-| Retest zone = broken structure level | `Retest zone mode` | Which of the three matches how you actually trade it? |
+| Retest zone = broken structure level (confirmed) | `Retest zone mode` | Selected. The other two remain available for comparison. |
 | Confirmation close required | `Require confirmation close` | Off gives better fills and more entries, with less evidence |
 | 2R target | `Target (R multiple)` | Or target liquidity with 0 |
 | Stop 0.25 × ATR beyond the sweep wick | `Stop buffer (ATR)` | |

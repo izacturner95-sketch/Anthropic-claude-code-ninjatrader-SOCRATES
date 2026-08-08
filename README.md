@@ -57,7 +57,8 @@ src/NinjaTrader8/
     SocratesNQ.cs          Wiring: data series, orders, parameters
   AddOns/Socrates/
     Swings.cs              Swing high/low detection
-    Levels.cs              Reference levels, pivots, supply/demand zones
+    Levels.cs              Reference levels, pivots, the level book
+    OrderBlocks.cs         Supply and demand zones from displacement candles
     Sweeps.cs              Liquidity sweep detection
     MarketAnalyzer.cs      Per-instrument bundle of the three above
     SetupEngine.cs         Sequencing state machine for steps 2-4

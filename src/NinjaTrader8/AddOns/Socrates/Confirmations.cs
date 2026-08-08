@@ -97,9 +97,9 @@ namespace Socrates.Market
 		/// Feed one completed VIX bar. referenceClose is the VIX close a lookback ago, or a
 		/// moving average of it - whatever the strategy uses to judge "VIX is selling".
 		/// </summary>
-		public void Update(int barIndex, DateTime time, double high, double low, double close, double referenceClose, double atr)
+		public void Update(int barIndex, DateTime time, double open, double high, double low, double close, double referenceClose, double atr)
 		{
-			analyzer.Update(barIndex, time, high, low, close, atr);
+			analyzer.Update(barIndex, time, open, high, low, close, atr);
 			this.lastClose = close;
 			this.referenceClose = referenceClose;
 			this.lastBarIndex = barIndex;

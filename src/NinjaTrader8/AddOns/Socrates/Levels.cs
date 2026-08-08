@@ -33,7 +33,13 @@ namespace Socrates.Market
 		S2,
 		S3,
 		SwingHigh,
-		SwingLow
+		SwingLow,
+
+		/// <summary>Bearish order block - the last up candle before a down displacement.</summary>
+		Supply,
+
+		/// <summary>Bullish order block - the last down candle before an up displacement.</summary>
+		Demand
 	}
 
 	public enum LevelTimeframe
@@ -105,6 +111,11 @@ namespace Socrates.Market
 	{
 		private readonly List<Level> sessionLevels = new List<Level>();
 		private readonly List<Level> structuralLevels = new List<Level>();
+
+		// Zones owned elsewhere - currently the order block detector - and re-registered
+		// each bar. The book does not manage their lifetime.
+		private readonly List<Level> dynamicLevels = new List<Level>();
+
 		private readonly int maxStructuralLevels;
 
 		public LevelBook(int maxStructuralLevels)
@@ -121,14 +132,30 @@ namespace Socrates.Market
 
 				for (int i = 0; i < structuralLevels.Count; i++)
 					yield return structuralLevels[i];
+
+				for (int i = 0; i < dynamicLevels.Count; i++)
+					yield return dynamicLevels[i];
 			}
 		}
 
-		public int Count { get { return sessionLevels.Count + structuralLevels.Count; } }
+		public int Count { get { return sessionLevels.Count + structuralLevels.Count + dynamicLevels.Count; } }
 
 		public void ClearSessionLevels()
 		{
 			sessionLevels.Clear();
+		}
+
+		public void ClearDynamicLevels()
+		{
+			dynamicLevels.Clear();
+		}
+
+		public void AddDynamicLevel(Level level)
+		{
+			if (level == null || level.Price <= 0)
+				return;
+
+			dynamicLevels.Add(level);
 		}
 
 		/// <summary>
