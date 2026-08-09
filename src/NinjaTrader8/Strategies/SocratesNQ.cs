@@ -52,6 +52,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double[] breadthSessionOpen = new double[0];
 
 		// --- Session tracking ---
+		private DateTime currentSessionDate = DateTime.MinValue;
 		private double overnightHigh = double.MinValue;
 		private double overnightLow = double.MaxValue;
 		private double openingRangeHigh = double.MinValue;
@@ -339,7 +340,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			int timeOfDay = ToTime(Time[0]);
 
-			if (risk.SyncTradingDay(Bars.GetTradingDayFromLocal(Time[0])))
+			// The session identifier only has to be unique per session and change exactly
+			// once when the session rolls; the platform's session template decides when
+			// that is, which keeps this correct for both RTH and 24-hour Globex templates.
+			if (Bars.IsFirstBarOfSession || currentSessionDate == DateTime.MinValue)
+				currentSessionDate = Time[0].Date;
+
+			if (risk.SyncTradingDay(currentSessionDate))
 				OnNewTradingDay();
 
 			TrackSessionRanges(timeOfDay);
@@ -627,7 +634,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 
 			double p, r1, r2, r3, s1, s2, s3;
-			Pivots.Classic(high, low, close, out p, out r1, out r2, out r3, out s1, out s2, out s3);
+			FloorPivots.Classic(high, low, close, out p, out r1, out r2, out r3, out s1, out s2, out s3);
 
 			nq.Levels.AddSessionLevel(LevelKind.Pivot, timeframe, p, halfWidth, now);
 			nq.Levels.AddSessionLevel(LevelKind.R1, timeframe, r1, halfWidth, now);

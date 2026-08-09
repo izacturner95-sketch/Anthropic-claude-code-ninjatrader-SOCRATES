@@ -79,8 +79,10 @@ namespace Socrates.Risk
 		public DateTime CurrentTradingDay { get { return currentTradingDay; } }
 
 		/// <summary>
-		/// Called by the strategy on every bar with the session's trading day.
-		/// Resets the daily counters when the day rolls over. Returns true if a reset occurred.
+		/// Called on every bar with an identifier for the current session. It only has to be
+		/// unique per session and change exactly once when the session rolls - the caller
+		/// decides what marks a session boundary. Resets the daily counters on a roll and
+		/// returns true when it did.
 		/// </summary>
 		public bool SyncTradingDay(DateTime tradingDay)
 		{

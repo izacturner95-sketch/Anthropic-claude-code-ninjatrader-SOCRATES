@@ -85,8 +85,12 @@ namespace Socrates.Market
 
 	/// <summary>
 	/// Classic floor-trader pivots, derived from a completed period's high, low and close.
+	///
+	/// Named FloorPivots rather than Pivots because NinjaTrader's Strategy base class
+	/// already exposes a Pivots() indicator method, which would shadow this type
+	/// everywhere inside a strategy.
 	/// </summary>
-	public static class Pivots
+	public static class FloorPivots
 	{
 		public static void Classic(double high, double low, double close,
 			out double p, out double r1, out double r2, out double r3,
