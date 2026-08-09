@@ -182,15 +182,21 @@ direction. Without that confirmation the entry is a limit order into a zone with
 evidence it is holding.
 
 **Stop:** below the previous low, above the previous high on a short, by
-`Stop buffer (ATR)`. After the sweep and the structure shift, price pulls back into the
-retest and leaves a swing behind — that swing is what has to hold for the trade to be
-right, so it is where the stop belongs. It is also far nearer than the swept extreme,
-which is the point: anchoring to the extreme was measuring 169 to 810 ticks.
+`Stop buffer (ATR)`. "The previous low" is the **low of the pullback into this retest**,
+tracked bar by bar from the structure shift onward. That is the level the trade is
+betting holds, and it is far nearer than the swept extreme.
 
-If no swing has confirmed since the sweep, the stop falls back to the swept extreme —
-the older behaviour, still correct, just wider. The run summary counts how often each
-happens, because a run dominated by the fallback is not really stopping where it was
-asked to, and the fix for that is a lower `Swing strength` so swings confirm sooner.
+It is deliberately not the last confirmed swing low, which was the first implementation
+and did not work. A swing needs `(2 × strength) + 1` = 7 bars to confirm, and the
+pullback low is one or two bars old when entry triggers, so the nearest *confirmed* low
+below entry was almost always the swept extreme itself. Stops came out at 169–723 ticks
+— unchanged from anchoring to the extreme directly — while the log cheerfully reported
+them as anchored to a swing. Tracking the pullback extreme has no confirmation lag.
+
+Two fallbacks remain for the degenerate case where the confirming bar is itself the
+extreme: the last confirmed swing, then the swept extreme. The run summary counts all
+three sources, because a stop that silently comes from somewhere other than where it was
+asked to is exactly the failure this replaced.
 
 **Target:** at, or `Target buffer (ticks)` short of, the previous high — the previous
 low on a short. The last ticks into a level are where it reverses, so the exit sits in

@@ -128,11 +128,13 @@ namespace Socrates.Market
 		private double displacementExtreme;
 		private double zoneCenter;
 		private double zoneHalfWidth;
+		private double retestExtreme;
 		private bool zoneTouched;
 		private int discardedTooWide;
 		private int discardedPoorReward;
 		private int sweepsAdopted;
 		private int sweepsIgnored;
+		private int stopsFromRetest;
 		private int stopsFromSwing;
 		private int stopsFromSweepExtreme;
 		private int targetsFromSwing;
@@ -165,7 +167,10 @@ namespace Socrates.Market
 		/// <summary>Setups abandoned because the structural target did not pay for the structural stop.</summary>
 		public int DiscardedPoorReward { get { return discardedPoorReward; } }
 
-		/// <summary>Stops anchored to a swing since the sweep, versus falling back to the swept extreme.</summary>
+		/// <summary>Stops anchored to the pullback extreme of the retest - the intended source.</summary>
+		public int StopsFromRetest { get { return stopsFromRetest; } }
+
+		/// <summary>Stops that fell back to the last confirmed swing.</summary>
 		public int StopsFromSwing { get { return stopsFromSwing; } }
 
 		public int StopsFromSweepExtreme { get { return stopsFromSweepExtreme; } }
@@ -286,6 +291,7 @@ namespace Socrates.Market
 
 				shiftBarIndex = barIndex;
 				displacementExtreme = sweep.Side == SweepSide.SellSide ? high : low;
+				retestExtreme = sweep.Side == SweepSide.SellSide ? low : high;
 				BuildRetestZone(atr);
 				zoneTouched = false;
 				state = SetupState.AwaitingRetest;
@@ -298,6 +304,15 @@ namespace Socrates.Market
 			}
 
 			// AwaitingRetest
+			//
+			// The low of the pullback into the retest, tracked live. It is the level the
+			// trade is betting holds, and unlike a swing point it needs no confirmation lag -
+			// which matters, because a swing needs (2 x strength) + 1 bars and the pullback
+			// low is usually one or two bars old when entry triggers.
+			retestExtreme = sweep.Side == SweepSide.SellSide
+				? Math.Min(retestExtreme, low)
+				: Math.Max(retestExtreme, high);
+
 			if (barIndex - shiftBarIndex > settings.MaxBarsShiftToRetest)
 			{
 				Reset(string.Format("No retest within {0} bars of the structure shift.", settings.MaxBarsShiftToRetest));
@@ -338,24 +353,51 @@ namespace Socrates.Market
 
 			double stopBuffer = atr * settings.StopBufferAtr;
 
-			// Stop below the previous low, or above the previous high on a short. After a
-			// sweep and a structure shift, price pulls back into the retest and leaves a
-			// swing behind; that swing is what has to hold for the trade to be right, so it
-			// is where the stop belongs. It is also much nearer than the swept extreme, which
-			// is the whole point - anchoring to the extreme was producing 400-tick stops.
+			// Stop below the previous low, or above the previous high on a short.
 			//
-			// Falls back to the swept extreme when no swing has confirmed since the sweep,
-			// which is the older behaviour and still correct, just wider.
-			SwingPoint stopSwing = bullish
-				? analyzer.Swings.MostRecentLowBelow(close, 0)
-				: analyzer.Swings.MostRecentHighAbove(close, 0);
+			// "The previous low" is the low of the pullback into this retest, not the last
+			// confirmed swing low. Asking the swing detector was the obvious reading and it
+			// was wrong in practice: a swing needs (2 x strength) + 1 bars to confirm, the
+			// pullback low is one or two bars old when entry triggers, so the nearest
+			// confirmed low below entry was almost always the swept extreme itself. The stop
+			// was landing exactly where it had before - 169 to 723 ticks - while the log
+			// reported it as anchored to a swing.
+			//
+			// The tracked pullback extreme has no confirmation lag and is the level the trade
+			// is actually betting holds.
+			double stopAnchor;
+			string stopSource;
 
-			double stopAnchor = stopSwing.IsValid ? stopSwing.Price : sweep.ExtremePrice;
+			bool retestValid = retestExtreme > 0
+				&& (bullish ? retestExtreme < close : retestExtreme > close);
 
-			if (stopSwing.IsValid)
-				stopsFromSwing++;
+			if (retestValid)
+			{
+				stopAnchor = retestExtreme;
+				stopSource = bullish ? "retest low" : "retest high";
+				stopsFromRetest++;
+			}
 			else
-				stopsFromSweepExtreme++;
+			{
+				// Degenerate case: the confirming bar is itself the extreme. Fall back to the
+				// last confirmed swing, then to the swept extreme.
+				SwingPoint stopSwing = bullish
+					? analyzer.Swings.MostRecentLowBelow(close, 0)
+					: analyzer.Swings.MostRecentHighAbove(close, 0);
+
+				if (stopSwing.IsValid)
+				{
+					stopAnchor = stopSwing.Price;
+					stopSource = bullish ? "previous swing low" : "previous swing high";
+					stopsFromSwing++;
+				}
+				else
+				{
+					stopAnchor = sweep.ExtremePrice;
+					stopSource = "swept extreme";
+					stopsFromSweepExtreme++;
+				}
+			}
 
 			double stopPrice = bullish ? stopAnchor - stopBuffer : stopAnchor + stopBuffer;
 			double risk = Math.Abs(close - stopPrice);
@@ -437,7 +479,7 @@ namespace Socrates.Market
 			result.Detail = string.Format(
 				"{0}: swept {1}, shift at {2:N2}, retest {3:N2}. Stop {4:N2} ({5}), target {6:N2} ({7}). Risk {8:N2} pts, {9:N2}R.",
 				result.Label, sweep.Level, structureReference.Price, zoneCenter,
-				stopPrice, stopSwing.IsValid ? string.Format("previous {0} {1:N2}", bullish ? "low" : "high", stopAnchor) : "swept extreme",
+				stopPrice, string.Format("{0} {1:N2}", stopSource, stopAnchor),
 				targetPrice, targetSource, risk, reward / risk);
 
 			Reset("Entry taken.");

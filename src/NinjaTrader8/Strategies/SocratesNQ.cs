@@ -1395,8 +1395,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				// A sweep every few bars is not a market taking liquidity that often, it is
 				// the level book firing on noise. Nothing downstream can develop through it.
+				// Printed with the values in force, not just the advice, because a threshold
+				// that was raised in the code but never reached a configured instance looks
+				// exactly like a threshold that did not work.
 				if (totalSweeps > 0 && barsProcessed / (double)totalSweeps < 8.0)
-					Print("      NOTE: sweeps this frequent are noise. Raise 'Min penetration' or 'Level merge distance'.");
+				{
+					Print(string.Format("      NOTE: sweeps this frequent are noise. Penetration is currently max({0:N2} ATR, {1:N2} pts) - raise it.",
+						MinPenetrationAtr, MinPenetrationPoints));
+				}
 			}
 
 			Print(string.Format("  Structure shifts (3) : {0}", totalShifts));
@@ -1481,22 +1487,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 					(running * 100.0) / stopSamples));
 			}
 
-			if (setup != null)
+			if (setup != null && setup.StopsFromRetest + setup.StopsFromSwing + setup.StopsFromSweepExtreme > 0)
 			{
-				int anchored = setup.StopsFromSwing;
-				int fellBack = setup.StopsFromSweepExtreme;
-
-				if (anchored + fellBack > 0)
-				{
-					Print(string.Format("  Anchored to a previous swing: {0}. Fell back to the swept extreme: {1}.",
-						anchored, fellBack));
-
-					// The fallback is the old, much wider behaviour. If it dominates, no swing
-					// is confirming between the sweep and the retest and the stop is not
-					// really coming from where it was asked to.
-					if (fellBack > anchored)
-						Print("  NOTE: most stops fell back to the swept extreme. Lower 'Swing strength' so swings confirm sooner.");
-				}
+				Print(string.Format("  Anchored to the retest low/high: {0}. Confirmed swing: {1}. Swept extreme: {2}.",
+					setup.StopsFromRetest, setup.StopsFromSwing, setup.StopsFromSweepExtreme));
 			}
 
 			int wouldPass = 0;
