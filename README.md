@@ -41,9 +41,10 @@ into arithmetic, and is the file to read first.
 | Globex hours | Sun 18:00 ET – Fri 17:00 ET, daily halt 17:00–18:00 ET |
 | Regular hours | 09:30 – 16:00 ET |
 
-At one contract, a 50-point adverse move is $1,000. Risk per trade is set by the
-stop, not by a dollar budget: **Stop loss (ticks)** x tick value x contracts is the
-whole calculation, known before the order goes out.
+At one contract, a 50-point adverse move is $1,000. Risk per trade is not a setting:
+the stop goes below the previous low and the target at the previous high, so both are
+whatever structure offers. **Max setup risk (ATR)** is the ceiling on it, and the
+startup banner prices the widest admissible stop against your daily loss limit.
 
 The Micro (MNQ) is one tenth the size — $0.50 per tick, $2.00 per point. Switching
 the strategy to MNQ is a single parameter change (**Tick value**).
