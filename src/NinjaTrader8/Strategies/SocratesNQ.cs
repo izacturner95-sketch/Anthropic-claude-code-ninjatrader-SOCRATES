@@ -155,6 +155,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double rMin = double.MaxValue;
 		private double rMax = double.MinValue;
 
+		// A stop is supposed to cap a loss at 1R. Anything worse means price left the stop
+		// behind - a gap, or a bar that opened through it - and that is not visible in a mean.
+		private static readonly string[] RBucketLabels =
+		{
+			"worse than -3R", "-3R to -2R", "-2R to -1R", "-1R to 0",
+			"0 to +1R", "+1R to +2R", "+2R to +3R", "+3R to +5R", "better than +5R"
+		};
+
+		private readonly int[] rBuckets = new int[9];
+		private int stopOverruns;
+		private double rSumCappedAtStop;
+
 		protected override void OnStateChange()
 		{
 			if (State == State.SetDefaults)
@@ -1300,6 +1312,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			rSum = 0;
 			rMin = double.MaxValue;
 			rMax = double.MinValue;
+			Array.Clear(rBuckets, 0, rBuckets.Length);
+			stopOverruns = 0;
+			rSumCappedAtStop = 0;
 		}
 
 		/// <summary>
@@ -1577,11 +1592,34 @@ namespace NinjaTrader.NinjaScript.Strategies
 			rSamples++;
 			rSum += r;
 
+			// What the run would have returned had every stop held at exactly 1R. The gap
+			// between this and the actual mean is the price of slippage through stops, which
+			// is otherwise invisible - it hides inside a worsened average.
+			rSumCappedAtStop += Math.Max(r, -1.0);
+
+			if (r < -1.05)
+				stopOverruns++;
+
+			rBuckets[RBucketFor(r)]++;
+
 			if (r < rMin)
 				rMin = r;
 
 			if (r > rMax)
 				rMax = r;
+		}
+
+		private static int RBucketFor(double r)
+		{
+			if (r < -3) return 0;
+			if (r < -2) return 1;
+			if (r < -1) return 2;
+			if (r < 0) return 3;
+			if (r < 1) return 4;
+			if (r < 2) return 5;
+			if (r < 3) return 6;
+			if (r < 5) return 7;
+			return 8;
 		}
 
 		/// <summary>
@@ -1632,10 +1670,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 				Print(string.Format("  R multiple           : mean {0:+0.00;-0.00}, best {1:+0.00;-0.00}, worst {2:+0.00;-0.00}, over {3} trades",
 					rSum / rSamples, rMax, rMin, rSamples));
 
+				for (int i = 0; i < rBuckets.Length; i++)
+				{
+					if (rBuckets[i] > 0)
+						Print(string.Format("      {0,-16} {1,4}", RBucketLabels[i], rBuckets[i]));
+				}
+
 				// Expectancy is the only figure here that survives a change of position size,
 				// so it is the one to judge the geometry by.
 				if (rSum / rSamples <= 0)
 					Print("  NOTE: negative expectancy. The sequence is finding setups; they are not paying.");
+
+				if (stopOverruns > 0)
+				{
+					Print(string.Format("  Stops that did not hold: {0} of {1} trades lost more than 1R, worst {2:+0.00;-0.00}R.",
+						stopOverruns, rSamples, rMin));
+					Print(string.Format("      Had every stop held at exactly 1R, mean would be {0:+0.00;-0.00}R instead of {1:+0.00;-0.00}R.",
+						rSumCappedAtStop / rSamples, rSum / rSamples));
+					Print("      That gap is price gapping or running through the stop, not a coding fault -");
+					Print("      a stop is an order, not a guarantee. It is the cost of holding through thin hours.");
+				}
 			}
 
 			Print("  These are backtest fills. Model commission and slippage before believing any of it.");
