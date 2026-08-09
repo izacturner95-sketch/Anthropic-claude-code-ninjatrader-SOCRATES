@@ -77,19 +77,40 @@ The engine classes are plain C# with no NinjaTrader dependencies. Only
 
 ## Data requirements
 
-With everything enabled the strategy loads twelve series, and **every one must exist
-in your data feed or it will not start**:
-
-| Series | Purpose | Notes |
+| Series | Purpose | Loaded when |
 |---|---|---|
-| NQ intraday | Primary | |
-| NQ daily, weekly, 4-hour | Prior period levels and pivots | 4-hour is optional |
-| `^VIX` | Step 5 | Not carried by every broker feed |
-| AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA | Step 6 | Editable list |
+| NQ intraday | Primary | always |
+| NQ daily, weekly | Prior period levels and pivots | always |
+| NQ 4-hour | 4-hour pivots | **Use 4-hour pivots** on |
+| `^VIX` | Step 5 | **VIX mode** not Off |
+| AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA | Step 6 | **Breadth mode** not Off |
 
-Steps 5 and 6 can each be set to Off, which also stops their series from loading.
-Because the VIX index and equities trade regular hours only, running either
+**Steps 5 and 6 ship Off.** With both on the strategy loads twelve series, and every
+one must exist in your feed or NinjaTrader will not start the strategy at all — it
+writes the reason to the Log tab, prints nothing, and trades nothing. A futures-only
+feed carries none of the eight index and equity symbols. Turn each step on once you
+have confirmed its symbols open on a chart.
+
+Because the VIX index and the equities trade regular hours only, running either
 confirmation makes this a 09:30–16:00 ET strategy.
+
+The prior-day and prior-week levels need history: three weeks of loaded data before
+weekly pivots exist. Short loads are not fatal — the missing levels are skipped, a
+line says so, and swing zones and order blocks carry the sequence — but the level
+book is thinner and there will be fewer sweeps.
+
+## Diagnostics
+
+Trades only happen when all six steps complete in order, so silence is the normal
+state and needs to be explainable. The strategy prints:
+
+- a **startup banner** naming every series with its bar count, before any bar is processed
+- a **heartbeat** every `Status every N bars` bars: bar count, ATR, level count, setup state
+- a **daily funnel** at each session roll: sweeps → structure shifts → retests → entries, plus what was rejected and by which gate
+- a **run summary** when it stops, with a pointer to the first step that produced nothing
+
+`docs/SETUP.md` sections 6 and 7 work through an empty Output window and a run with
+output but no trades.
 
 The folder structure mirrors NinjaTrader's own `Documents\NinjaTrader 8\bin\Custom\`
 so files can be copied across without rearranging.

@@ -57,7 +57,76 @@ Open **New → NinjaScript Output** to see the strategy's log — every entry, e
 skipped trade with the reason, every risk halt. When something behaves unexpectedly,
 this window usually explains it, and it is the most useful thing to send me.
 
-## 6. Before going live
+The first thing printed is a banner listing every data series with its bar count:
+
+```
+=== Socrates NQ ===================================================
+  Instrument      : NQ 12-25
+  Calculate       : OnBarClose, bars required 30
+  Entry window    : 094500-154500, flatten 155500
+  Sizing          : Fixed, max 1 contract(s), daily loss cap $1,000.00
+  Stop band       : 20-100 ticks
+  Step 5 (VIX)    : Off
+  Step 6 (leaders): Off
+  Data series     : 4
+    [0] NQ primary                  4680 bars
+    [1] NQ daily                      60 bars
+    [2] NQ weekly                     13 bars
+    [3] NQ 4-hour                    360 bars
+===================================================================
+```
+
+Then, every `Status every N bars` bars, a heartbeat; at each session roll, a funnel
+line for the day just finished; and at the end of the run, a summary of how far
+setups got. Nothing produces trades until the whole sequence completes, so the funnel
+is how you find out which step is stopping them.
+
+## 6. Nothing is printed at all
+
+If the Output window stays completely empty, the strategy is not running — the
+problem is upstream of any of its logic. In order of likelihood:
+
+1. **A data series failed to load.** Steps 5 and 6 need `^VIX` and seven equity
+   symbols. If one is missing from your feed, NinjaTrader refuses to start the
+   strategy and writes the reason to the **Control Center → Log** tab, not to
+   Output. Both steps ship **Off** for this reason; turn them on only after each
+   symbol opens on a chart of its own.
+2. **The strategy is not enabled.** On a chart, the Strategies dialog has an
+   *Enabled* checkbox separate from adding the strategy.
+3. **It did not compile.** An unrelated broken script anywhere in the Custom folder
+   blocks the whole compile, and the previously compiled version keeps running.
+4. **Output window filtered.** It has a per-strategy filter dropdown.
+
+Check the **Log** tab before anything else. Every one of these writes a line there.
+
+## 7. Output appears but no trades
+
+Read the run summary printed when the strategy stops:
+
+```
+=== Socrates NQ - run summary =====================================
+  Bars evaluated       : 4650
+  Sweeps (step 2)      : 214
+  Structure shifts (3) : 31
+  Retests reached (4)  : 12
+  Entries submitted    : 4
+  Rejected on stop band: 6
+===================================================================
+```
+
+Each line is a step of the sequence, and the first one that reads zero is the one to
+loosen. `Verbose logging` prints every state transition if you need the detail behind
+a number.
+
+Two settings block far more setups than people expect:
+
+- **Max stop (ticks)**, default 100. The stop sits beyond the swept extreme, so a
+  wide sweep produces a wide stop and the setup is skipped. Raising it means raising
+  the daily loss limit too — see the comment on the parameter.
+- **Min displacement (ATR)**, default 1.0. Requiring the structure-breaking bar to
+  span a full ATR is a demanding test on a 5-minute chart.
+
+## 8. Before going live
 
 In order, no skipping:
 

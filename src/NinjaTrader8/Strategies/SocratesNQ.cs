@@ -70,6 +70,41 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int processedTradeCount;
 		private bool flattenedForDay;
 
+		// --- Diagnostics ---
+		//
+		// A strategy that prints nothing is indistinguishable from a strategy that never
+		// ran, so every path that can silence it either logs once or is counted. The
+		// funnel counters answer the only question that matters when there are no trades:
+		// how far down the six steps did price actually get?
+		private bool firstBarLogged;
+		private bool warmupLogged;
+		private bool dailyContextWarned;
+		private bool weeklyContextWarned;
+		private bool zeroAtrWarned;
+		private bool previousZoneTouched;
+		private int barsProcessed;
+		private int lastStatusBar = int.MinValue;
+
+		private int daySweeps;
+		private int dayShifts;
+		private int dayZoneTouches;
+		private int dayEntries;
+		private int dayBlockedByRisk;
+		private int dayRejectedVix;
+		private int dayRejectedBreadth;
+		private int dayRejectedStop;
+		private int dayRejectedSizing;
+
+		private int totalSweeps;
+		private int totalShifts;
+		private int totalZoneTouches;
+		private int totalEntries;
+		private int totalBlockedByRisk;
+		private int totalRejectedVix;
+		private int totalRejectedBreadth;
+		private int totalRejectedStop;
+		private int totalRejectedSizing;
+
 		protected override void OnStateChange()
 		{
 			if (State == State.SetDefaults)
@@ -152,7 +187,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 				MaxStopTicks = 100;
 
 				// --- Step 5: VIX ---
-				VixMode = ConfirmationMode.Strict;
+				//
+				// Off by default. Steps 5 and 6 need twelve data series between them, and a
+				// futures-only feed carries none of the eight index and equity symbols. A
+				// missing series is not a soft failure in NinjaTrader: the strategy refuses
+				// to start, logs to the Log tab rather than the Output window, and produces
+				// no prints and no trades at all. Turn these on once you have confirmed the
+				// symbols load on a chart of their own.
+				VixMode = ConfirmationMode.Off;
 				VixSymbol = "^VIX";
 				VixBarMinutes = 5;
 				VixLookbackBars = 6;
@@ -160,7 +202,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				VixKeyLevelTolerance = 0.35;
 
 				// --- Step 6: breadth ---
-				BreadthMode = ConfirmationMode.Directional;
+				BreadthMode = ConfirmationMode.Off;
 				BreadthSymbols = "AAPL,MSFT,NVDA,AMZN,META,GOOGL,TSLA";
 				BreadthBarMinutes = 5;
 				BreadthMinAligned = 5;
@@ -168,6 +210,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				EnableLogging = true;
 				VerboseLogging = false;
+				StatusEveryBars = 120;
 			}
 			else if (State == State.Configure)
 			{
@@ -236,6 +279,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				// Series are added only when the step that needs them is enabled, so a data
 				// feed without index or equity coverage can still run steps 1-4.
+				idxDaily = idxWeekly = idxFourHour = idxVix = idxBreadthStart = -1;
+				breadthSymbols = new string[0];
+				breadthSessionOpen = new double[0];
+				vix = null;
+				breadth = null;
+
 				int next = 1;
 
 				AddDataSeries(BarsPeriodType.Day, 1);
@@ -307,17 +356,30 @@ namespace NinjaTrader.NinjaScript.Strategies
 				processedTradeCount = 0;
 				flattenedForDay = false;
 				sessionLevelsBuilt = false;
+
+				ResetDiagnostics();
+			}
+			else if (State == State.DataLoaded)
+			{
+				LogStartupBanner();
 			}
 			else if (State == State.Realtime)
 			{
 				Log(string.Format("Realtime. Sizing={0} max {1}, daily loss cap {2:C}, VIX={3}, breadth={4}.",
 					SizingMode, MaxContracts, MaxDailyLossDollars, VixMode, BreadthMode));
 			}
+			else if (State == State.Terminated)
+			{
+				// The template instance NinjaTrader builds to read SetDefaults also passes
+				// through Terminated, so only report for an instance that actually ran.
+				if (barsProcessed > 0)
+					LogRunSummary();
+			}
 		}
 
 		protected override void OnBarUpdate()
 		{
-			if (BarsInProgress == idxVix)
+			if (idxVix >= 0 && BarsInProgress == idxVix)
 			{
 				UpdateVix();
 				return;
@@ -335,11 +397,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (BarsInProgress != 0)
 				return;
 
+			// Proof of life on the very first bar, before any guard below can swallow it.
+			if (!firstBarLogged)
+			{
+				firstBarLogged = true;
+				Log(string.Format("First bar received at {0:yyyy-MM-dd HH:mm}. Warming up {1} bars before trading.",
+					Time[0], BarsRequiredToTrade));
+			}
+
 			if (CurrentBar < BarsRequiredToTrade)
 				return;
 
-			if (CurrentBars[idxDaily] < 2 || CurrentBars[idxWeekly] < 2)
-				return;
+			if (!warmupLogged)
+			{
+				warmupLogged = true;
+				Log(string.Format("Warm-up complete at bar {0}. Evaluating setups from here.", CurrentBar));
+			}
+
+			barsProcessed++;
 
 			DrainCompletedTrades();
 
@@ -351,14 +426,29 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (Bars.IsFirstBarOfSession || currentSessionDate == DateTime.MinValue)
 				currentSessionDate = Time[0].Date;
 
+			// SyncTradingDay clears the day's realised P/L and halt state, so the outgoing
+			// day has to be captured before the roll if it is to be reported afterwards.
+			DateTime closingDay = risk.CurrentTradingDay;
+			double closingPnL = risk.DailyRealisedPnL;
+			string closingHalt = risk.IsHaltedForDay ? risk.HaltReason : null;
+
 			if (risk.SyncTradingDay(currentSessionDate))
-				OnNewTradingDay();
+				OnNewTradingDay(closingDay, closingPnL, closingHalt);
 
 			TrackSessionRanges(timeOfDay);
 
 			double atr = ATR(AtrPeriod)[0];
 			if (atr <= 0)
+			{
+				if (!zeroAtrWarned)
+				{
+					zeroAtrWarned = true;
+					Log(string.Format("ATR({0}) is {1} - skipping bars until it is positive. Every threshold in this strategy scales off ATR.",
+						AtrPeriod, atr));
+				}
+
 				return;
+			}
 
 			// Step 1: refresh the level book, then let the analyzer look for sweeps against it.
 			if (HasNewReferenceBar())
@@ -372,7 +462,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			nq.Update(CurrentBar, Time[0], Open[0], High[0], Low[0], Close[0], atr);
 
-			if (VerboseLogging && nq.OrderBlocks.LastFormedCount > 0)
+			if (VerboseLogging && nq.OrderBlocks.LastFormedCount > 0 && nq.OrderBlocks.Active.Count > 0)
 			{
 				OrderBlock formed = nq.OrderBlocks.Active[nq.OrderBlocks.Active.Count - 1];
 				Log(string.Format("{0} order block {1:N2}-{2:N2}{3}. {4} active.",
@@ -382,10 +472,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			// Steps 2-4.
+			SetupState stateBefore = setup.State;
 			SetupResult result = setup.Update(nq, CurrentBar, Time[0], Open[0], High[0], Low[0], Close[0], atr);
+
+			TrackFunnel(stateBefore, result);
 
 			if (VerboseLogging && !string.IsNullOrEmpty(setup.LastTransition))
 				Log(setup.LastTransition);
+
+			LogStatusIfDue(atr);
 
 			// End-of-day flatten outranks everything.
 			if (risk.ShouldFlatten(timeOfDay))
@@ -410,11 +505,61 @@ namespace NinjaTrader.NinjaScript.Strategies
 			EntryBlockReason block = risk.CanEnter(timeOfDay, out blockDetail);
 			if (block != EntryBlockReason.None)
 			{
+				dayBlockedByRisk++;
+				totalBlockedByRisk++;
 				Log(string.Format("Setup complete but entry blocked ({0}): {1}", block, blockDetail));
 				return;
 			}
 
 			EvaluateConfirmationsAndEnter(result, atr);
+		}
+
+		/// <summary>
+		/// Counts how far price got down the sequence on this bar. Without this, "no trades"
+		/// has no diagnosis: a run that never produced a single sweep and a run that produced
+		/// forty sweeps rejected at step 5 look identical from the outside.
+		/// </summary>
+		private void TrackFunnel(SetupState stateBefore, SetupResult result)
+		{
+			if (nq.LastUpdateSweep.IsValid)
+			{
+				daySweeps++;
+				totalSweeps++;
+			}
+
+			if (stateBefore != SetupState.AwaitingRetest && setup.State == SetupState.AwaitingRetest)
+			{
+				dayShifts++;
+				totalShifts++;
+			}
+
+			// An entry on the same bar the zone is first touched leaves ZoneTouched already
+			// cleared by the engine's reset, so the result stands in for the touch.
+			if ((setup.ZoneTouched || result.HasEntry) && !previousZoneTouched)
+			{
+				dayZoneTouches++;
+				totalZoneTouches++;
+			}
+
+			previousZoneTouched = setup.ZoneTouched;
+		}
+
+		private void LogStatusIfDue(double atr)
+		{
+			if (StatusEveryBars <= 0)
+				return;
+
+			if (lastStatusBar != int.MinValue && CurrentBar - lastStatusBar < StatusEveryBars)
+				return;
+
+			lastStatusBar = CurrentBar;
+
+			Log(string.Format(
+				"Status: bar {0}, ATR {1:N2}, {2} levels, setup {3}. Today: {4} sweeps, {5} shifts, {6} retests, {7} entries. Day P/L {8:C}{9}.",
+				CurrentBar, atr, nq.Levels.Count, setup.State,
+				daySweeps, dayShifts, dayZoneTouches, dayEntries,
+				risk.DailyRealisedPnL,
+				risk.IsHaltedForDay ? ", HALTED: " + risk.HaltReason : string.Empty));
 		}
 
 		#region Steps 5 and 6
@@ -430,6 +575,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				if (!vixResult.Agrees)
 				{
+					dayRejectedVix++;
+					totalRejectedVix++;
 					Log(string.Format("Setup rejected at step 5. {0} | {1}", vixResult.Detail, result.Detail));
 					return;
 				}
@@ -447,6 +594,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				if (!breadthResult.Agrees)
 				{
+					dayRejectedBreadth++;
+					totalRejectedBreadth++;
 					Log(string.Format("Setup rejected at step 6. {0} | {1}", breadthResult.Detail, result.Detail));
 					return;
 				}
@@ -493,8 +642,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		#region Step 1 support
 
-		private void OnNewTradingDay()
+		private void OnNewTradingDay(DateTime closingDay, double closingPnL, string closingHalt)
 		{
+			// Report the day that just ended before the counters are cleared. Skipped on the
+			// first roll of the run, where there is no completed day behind us.
+			if (closingDay > DateTime.MinValue)
+				LogDaySummary(closingDay, closingPnL, closingHalt);
+
+			daySweeps = 0;
+			dayShifts = 0;
+			dayZoneTouches = 0;
+			dayEntries = 0;
+			dayBlockedByRisk = 0;
+			dayRejectedVix = 0;
+			dayRejectedBreadth = 0;
+			dayRejectedStop = 0;
+			dayRejectedSizing = 0;
+			previousZoneTouched = false;
+
 			flattenedForDay = false;
 			overnightHigh = double.MinValue;
 			overnightLow = double.MaxValue;
@@ -588,26 +753,52 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double halfWidth = atr * ZoneHalfWidthAtr;
 			DateTime now = Time[0];
 
-			double pdh = Highs[idxDaily][1];
-			double pdl = Lows[idxDaily][1];
-			double pdc = Closes[idxDaily][1];
+			// Each reference series is optional. A chart loaded with five days of history has
+			// one weekly bar, and requiring a completed prior week there would silence the
+			// whole strategy - no levels, no sweeps, no prints. Missing history costs the
+			// levels it would have produced and nothing else: swing zones and order blocks
+			// come from the primary series and are enough for the sequence to run.
+			double pdh = 0, pdl = 0, pdc = 0;
+			bool haveDaily = CurrentBars[idxDaily] >= 1;
 
-			nq.Levels.AddSessionLevel(LevelKind.PriorDayHigh, LevelTimeframe.Daily, pdh, halfWidth, now);
-			nq.Levels.AddSessionLevel(LevelKind.PriorDayLow, LevelTimeframe.Daily, pdl, halfWidth, now);
-			nq.Levels.AddSessionLevel(LevelKind.PriorDayClose, LevelTimeframe.Daily, pdc, halfWidth, now);
+			if (haveDaily)
+			{
+				pdh = Highs[idxDaily][1];
+				pdl = Lows[idxDaily][1];
+				pdc = Closes[idxDaily][1];
 
-			AddPivotSet(LevelTimeframe.Daily, pdh, pdl, pdc, halfWidth, now);
+				nq.Levels.AddSessionLevel(LevelKind.PriorDayHigh, LevelTimeframe.Daily, pdh, halfWidth, now);
+				nq.Levels.AddSessionLevel(LevelKind.PriorDayLow, LevelTimeframe.Daily, pdl, halfWidth, now);
+				nq.Levels.AddSessionLevel(LevelKind.PriorDayClose, LevelTimeframe.Daily, pdc, halfWidth, now);
 
-			double pwh = Highs[idxWeekly][1];
-			double pwl = Lows[idxWeekly][1];
-			double pwc = Closes[idxWeekly][1];
+				AddPivotSet(LevelTimeframe.Daily, pdh, pdl, pdc, halfWidth, now);
+			}
+			else if (!dailyContextWarned)
+			{
+				dailyContextWarned = true;
+				Log("No completed prior daily bar yet - prior-day levels and daily pivots are unavailable. Load more history if this persists.");
+			}
 
-			nq.Levels.AddSessionLevel(LevelKind.PriorWeekHigh, LevelTimeframe.Weekly, pwh, halfWidth, now);
-			nq.Levels.AddSessionLevel(LevelKind.PriorWeekLow, LevelTimeframe.Weekly, pwl, halfWidth, now);
+			bool haveWeekly = CurrentBars[idxWeekly] >= 1;
 
-			AddPivotSet(LevelTimeframe.Weekly, pwh, pwl, pwc, halfWidth, now);
+			if (haveWeekly)
+			{
+				double pwh = Highs[idxWeekly][1];
+				double pwl = Lows[idxWeekly][1];
+				double pwc = Closes[idxWeekly][1];
 
-			if (idxFourHour >= 0 && CurrentBars[idxFourHour] >= 2)
+				nq.Levels.AddSessionLevel(LevelKind.PriorWeekHigh, LevelTimeframe.Weekly, pwh, halfWidth, now);
+				nq.Levels.AddSessionLevel(LevelKind.PriorWeekLow, LevelTimeframe.Weekly, pwl, halfWidth, now);
+
+				AddPivotSet(LevelTimeframe.Weekly, pwh, pwl, pwc, halfWidth, now);
+			}
+			else if (!weeklyContextWarned)
+			{
+				weeklyContextWarned = true;
+				Log("No completed prior weekly bar yet - prior-week levels and weekly pivots are unavailable. Three weeks of history removes this.");
+			}
+
+			if (idxFourHour >= 0 && CurrentBars[idxFourHour] >= 1)
 			{
 				AddPivotSet(LevelTimeframe.FourHour,
 					Highs[idxFourHour][1], Lows[idxFourHour][1], Closes[idxFourHour][1], halfWidth, now);
@@ -628,8 +819,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!sessionLevelsBuilt)
 			{
 				sessionLevelsBuilt = true;
-				Log(string.Format("Context built: PDH {0:N2}, PDL {1:N2}, PDC {2:N2}, {3} levels in play.",
-					pdh, pdl, pdc, nq.Levels.Count));
+
+				Log(haveDaily
+					? string.Format("Context built: PDH {0:N2}, PDL {1:N2}, PDC {2:N2}, {3} levels in play.",
+						pdh, pdl, pdc, nq.Levels.Count)
+					: string.Format("Context built without prior-day data: {0} levels in play.", nq.Levels.Count));
 			}
 		}
 
@@ -661,6 +855,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (stopDistanceTicks < MinStopTicks)
 			{
+				dayRejectedStop++;
+				totalRejectedStop++;
 				Log(string.Format("Entry skipped: stop {0:N0} ticks is below the {1} tick minimum. {2}",
 					stopDistanceTicks, MinStopTicks, result.Detail));
 				return;
@@ -668,6 +864,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (stopDistanceTicks > MaxStopTicks)
 			{
+				dayRejectedStop++;
+				totalRejectedStop++;
 				Log(string.Format("Entry skipped: stop {0:N0} ticks exceeds the {1} tick maximum. {2}",
 					stopDistanceTicks, MaxStopTicks, result.Detail));
 				return;
@@ -685,6 +883,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (contracts <= 0)
 			{
+				dayRejectedSizing++;
+				totalRejectedSizing++;
 				Log("Entry skipped. " + sizingReason);
 				return;
 			}
@@ -702,6 +902,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				EnterShort(contracts, label);
 
 			risk.RecordEntry();
+			dayEntries++;
+			totalEntries++;
 
 			Log(string.Format("ENTRY {0} x{1} @ ~{2:N2}. {3} {4}",
 				result.Direction, contracts, entryPrice, result.Detail, sizingReason));
@@ -793,12 +995,154 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return ((total / 60) * 10000) + ((total % 60) * 100) + secs;
 		}
 
+		/// <summary>
+		/// Timestamped output to the NinjaScript Output window. The timestamp is taken from
+		/// the current bar when there is one - OnStateChange and OnConnectionStatusUpdate can
+		/// both fire before any bar exists, and dereferencing Time[0] there throws, which
+		/// disables the strategy and produces exactly the silence this is meant to prevent.
+		/// </summary>
 		private void Log(string message)
 		{
 			if (!EnableLogging)
 				return;
 
-			Print(string.Format("[{0:yyyy-MM-dd HH:mm:ss}] {1}", Time[0], message));
+			string stamp = State.ToString();
+
+			try
+			{
+				if (BarsInProgress >= 0 && CurrentBar >= 0)
+					stamp = Time[0].ToString("yyyy-MM-dd HH:mm:ss");
+			}
+			catch (Exception)
+			{
+				// OnConnectionStatusUpdate fires off the bar thread and can arrive before any
+				// series is addressable. The state name is a fine substitute; losing the line
+				// entirely is not.
+			}
+
+			Print(string.Format("[{0}] Socrates: {1}", stamp, message));
+		}
+
+		private void ResetDiagnostics()
+		{
+			firstBarLogged = false;
+			warmupLogged = false;
+			dailyContextWarned = false;
+			weeklyContextWarned = false;
+			zeroAtrWarned = false;
+			previousZoneTouched = false;
+			barsProcessed = 0;
+			lastStatusBar = int.MinValue;
+
+			daySweeps = dayShifts = dayZoneTouches = dayEntries = 0;
+			dayBlockedByRisk = dayRejectedVix = dayRejectedBreadth = dayRejectedStop = dayRejectedSizing = 0;
+
+			totalSweeps = totalShifts = totalZoneTouches = totalEntries = 0;
+			totalBlockedByRisk = totalRejectedVix = totalRejectedBreadth = totalRejectedStop = totalRejectedSizing = 0;
+		}
+
+		/// <summary>
+		/// Printed once every series has loaded. This is the line that proves the file
+		/// compiled, the strategy is enabled and the Output window is pointed at it - and it
+		/// names every series with its bar count, because a series that loaded empty is the
+		/// most common reason a correct strategy does nothing.
+		/// </summary>
+		private void LogStartupBanner()
+		{
+			if (!EnableLogging)
+				return;
+
+			Print("=== Socrates NQ ===================================================");
+			Print(string.Format("  Instrument      : {0}", Instrument != null ? Instrument.FullName : "unknown"));
+			Print(string.Format("  Calculate       : {0}, bars required {1}", Calculate, BarsRequiredToTrade));
+			Print(string.Format("  Entry window    : {0:000000}-{1:000000}, flatten {2:000000}", SessionStartTime, SessionEndTime, FlattenTime));
+			Print(string.Format("  Sizing          : {0}, max {1} contract(s), daily loss cap {2:C}", SizingMode, MaxContracts, MaxDailyLossDollars));
+			Print(string.Format("  Stop band       : {0}-{1} ticks", MinStopTicks, MaxStopTicks));
+			Print(string.Format("  Step 5 (VIX)    : {0}{1}", VixMode, VixMode == ConfirmationMode.Off ? string.Empty : " on " + VixSymbol));
+			Print(string.Format("  Step 6 (leaders): {0}{1}", BreadthMode, BreadthMode == ConfirmationMode.Off ? string.Empty : " on " + BreadthSymbols));
+			Print(string.Format("  Data series     : {0}", BarsArray != null ? BarsArray.Length : 0));
+
+			if (BarsArray != null)
+			{
+				for (int i = 0; i < BarsArray.Length; i++)
+				{
+					int count = BarsArray[i] != null ? BarsArray[i].Count : 0;
+
+					Print(string.Format("    [{0}] {1,-24} {2,7} bars{3}", i, DescribeSeries(i), count,
+						count == 0 ? "   <-- EMPTY, this series has no data" : string.Empty));
+				}
+
+				if (idxDaily >= 0 && BarsArray[idxDaily] != null && BarsArray[idxDaily].Count < 2)
+					Print("  NOTE: fewer than two daily bars. Prior-day levels and daily pivots will be skipped.");
+
+				if (idxWeekly >= 0 && BarsArray[idxWeekly] != null && BarsArray[idxWeekly].Count < 2)
+					Print("  NOTE: fewer than two weekly bars. Prior-week levels and weekly pivots will be skipped.");
+			}
+
+			Print("===================================================================");
+		}
+
+		private string DescribeSeries(int index)
+		{
+			if (index == 0)
+				return "NQ primary";
+
+			if (index == idxDaily)
+				return "NQ daily";
+
+			if (index == idxWeekly)
+				return "NQ weekly";
+
+			if (index == idxFourHour)
+				return "NQ 4-hour";
+
+			if (index == idxVix)
+				return "VIX " + VixSymbol;
+
+			if (idxBreadthStart >= 0 && index >= idxBreadthStart && index < idxBreadthStart + breadthSymbols.Length)
+				return "leader " + breadthSymbols[index - idxBreadthStart];
+
+			return "unknown";
+		}
+
+		private void LogDaySummary(DateTime day, double realisedPnL, string haltReason)
+		{
+			Log(string.Format(
+				"Day {0:yyyy-MM-dd} funnel: {1} sweeps -> {2} structure shifts -> {3} retests -> {4} entries. "
+				+ "Rejected: risk {5}, VIX {6}, leaders {7}, stop band {8}, sizing {9}. Realised {10:C}{11}.",
+				day, daySweeps, dayShifts, dayZoneTouches, dayEntries,
+				dayBlockedByRisk, dayRejectedVix, dayRejectedBreadth, dayRejectedStop, dayRejectedSizing,
+				realisedPnL,
+				string.IsNullOrEmpty(haltReason) ? string.Empty : ", halted: " + haltReason));
+		}
+
+		private void LogRunSummary()
+		{
+			if (!EnableLogging)
+				return;
+
+			Print("=== Socrates NQ - run summary =====================================");
+			Print(string.Format("  Bars evaluated       : {0}", barsProcessed));
+			Print(string.Format("  Sweeps (step 2)      : {0}", totalSweeps));
+			Print(string.Format("  Structure shifts (3) : {0}", totalShifts));
+			Print(string.Format("  Retests reached (4)  : {0}", totalZoneTouches));
+			Print(string.Format("  Entries submitted    : {0}", totalEntries));
+			Print(string.Format("  Rejected by risk gate: {0}", totalBlockedByRisk));
+			Print(string.Format("  Rejected at step 5   : {0}", totalRejectedVix));
+			Print(string.Format("  Rejected at step 6   : {0}", totalRejectedBreadth));
+			Print(string.Format("  Rejected on stop band: {0}", totalRejectedStop));
+			Print(string.Format("  Rejected on sizing   : {0}", totalRejectedSizing));
+
+			if (totalSweeps == 0)
+				Print("  No sweeps at all. Loosen 'Min penetration' or check that levels are being built.");
+			else if (totalShifts == 0)
+				Print("  Sweeps but no structure shifts. Lower 'Min displacement (ATR)' or raise 'Max bars sweep to shift'.");
+			else if (totalZoneTouches == 0)
+				Print("  Shifts but no retests. Widen 'Retest zone width (ATR)' or raise 'Max bars shift to retest'.");
+			else if (totalEntries == 0)
+				Print("  Retests reached but nothing entered. The rejection counts above say which gate is doing it.");
+
+			Print("===================================================================");
 		}
 
 		#endregion
@@ -1057,6 +1401,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[NinjaScriptProperty]
 		[Display(Name = "Verbose logging", Description = "Log every state transition. Useful for tuning, noisy in production.", GroupName = "9. Diagnostics", Order = 1)]
 		public bool VerboseLogging { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, int.MaxValue)]
+		[Display(Name = "Status every N bars", Description = "Heartbeat line showing bar count, levels, setup state and the day's funnel. 0 disables.", GroupName = "9. Diagnostics", Order = 2)]
+		public int StatusEveryBars { get; set; }
 
 		#endregion
 	}

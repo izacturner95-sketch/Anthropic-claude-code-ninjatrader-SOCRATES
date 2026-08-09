@@ -107,6 +107,10 @@ namespace Socrates.Market
 
 		public SetupState State { get { return state; } }
 		public SweepEvent ActiveSweep { get { return sweep; } }
+
+		/// <summary>True once price has traded into the retest zone of the current setup. Exposed so the strategy can count how far setups get.</summary>
+		public bool ZoneTouched { get { return zoneTouched; } }
+
 		public string LastTransition { get; private set; }
 
 		public void Reset(string reason)
