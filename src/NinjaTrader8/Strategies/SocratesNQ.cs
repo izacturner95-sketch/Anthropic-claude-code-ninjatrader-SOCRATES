@@ -144,7 +144,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StopBufferAtr = 0.25;
 				TargetRMultiple = 2.0;
 				MinStopTicks = 20;
-				MaxStopTicks = 200;
+
+				// 100 ticks is 25 points, or $500 on one NQ contract. Paired with the
+				// 2-consecutive-loss halt that is $1,000, which is exactly the daily loss
+				// cap - so the two limits agree instead of the cap being breached in one
+				// trade. Raise this only alongside the daily loss limit.
+				MaxStopTicks = 100;
 
 				// --- Step 5: VIX ---
 				VixMode = ConfirmationMode.Strict;
@@ -991,7 +996,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		[NinjaScriptProperty]
 		[Range(1, 2000)]
-		[Display(Name = "Max stop (ticks)", Description = "Setups needing a wider stop are skipped as too expensive.", GroupName = "6. Step 4 - Retest", Order = 7)]
+		[Display(Name = "Max stop (ticks)", Description = "Setups needing a wider stop are skipped. Keep this consistent with the daily loss limit: ticks x $5 x max consecutive losses should not exceed it.", GroupName = "6. Step 4 - Retest", Order = 7)]
 		public int MaxStopTicks { get; set; }
 
 		[NinjaScriptProperty]

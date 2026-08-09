@@ -228,6 +228,50 @@ blocking every trade.
 
 ---
 
+## The 5-minute NQ baseline
+
+Every default is set for a **5-minute NQ chart, RTH session**. The reasoning is
+recorded here so that changing timeframe later is a deliberate recalculation rather
+than guesswork.
+
+ATR(14) on 5-minute NQ typically runs 15–30 points, so read every ATR multiple below
+as roughly that many points.
+
+| Parameter | Default | In 5-minute terms |
+|---|---|---|
+| `Swing strength` | 3 | A swing confirms 15 minutes after it forms |
+| `Min penetration (ATR)` | 0.10 | ~2.5 points beyond a zone edge |
+| `Max bars to reclaim` | 6 | 30 minutes to fail, or it was a real breakout |
+| `Max bars sweep to shift` | 12 | 1 hour to break structure |
+| `Max bars shift to retest` | 15 | 75 minutes to come back |
+| `Min displacement (ATR)` | 1.0 | The breaking bar must be larger than an average bar |
+| `Order block displacement (ATR)` | 1.0 | Same test, plus an imbalance |
+| `Order block origin lookback` | 10 | 50 minutes back to find the opposing candle |
+| `Opening range (minutes)` | 15 | Completes at 09:45 |
+| `Session start` | 09:45 | Deliberately the moment the opening range completes |
+
+Longest possible setup lifetime is 6 + 12 + 15 = 33 bars, just under 3 hours, which
+fits inside the 09:45–15:45 entry window.
+
+**Risk numbers are meant to agree with each other**, and it is easy to break that by
+changing one in isolation:
+
+```
+Max stop 100 ticks x $5/tick   = $500 worst case per trade
+Max consecutive losses 2       = $1,000 before the halt fires
+Max daily loss                 = $1,000
+```
+
+Raising `Max stop (ticks)` without raising the daily loss limit means a single trade
+can breach the cap, which the risk manager can only detect after the fact. The three
+numbers should be changed together.
+
+**If you move to another timeframe**, the bar-count parameters are the ones that break
+first: on 1-minute they are five times too permissive in wall-clock terms, on 15-minute
+three times too strict. The ATR multiples mostly carry over, since ATR rescales itself.
+
+---
+
 ## Consequences worth knowing
 
 **This is a regular-hours strategy now.** Both the VIX index and the Magnificent 7 only
