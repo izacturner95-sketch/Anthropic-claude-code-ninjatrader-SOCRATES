@@ -258,7 +258,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				VixSymbol = "VX ##-##";
 				VixBarMinutes = 5;
 				VixLookbackBars = 6;
-				VixMinDirectionalMove = 0.10;
+				// An absolute floor only. The real test scales to the VIX's own ATR, because
+				// a fixed number set for the cash session is unreachable overnight.
+				VixMinDirectionalMove = 0.02;
+				VixMinDirectionalMoveAtr = 0.5;
 				VixKeyLevelTolerance = 0.35;
 
 				// --- Step 6: breadth ---
@@ -394,6 +397,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					{
 						Mode = VixMode,
 						MinDirectionalMove = VixMinDirectionalMove,
+						MinDirectionalMoveAtr = VixMinDirectionalMoveAtr,
 						KeyLevelTolerance = VixKeyLevelTolerance,
 						MaxDataAgeMinutes = VixBarMinutes * 3
 					}, new MarketAnalyzer(vixSettings));
@@ -1395,13 +1399,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				// A sweep every few bars is not a market taking liquidity that often, it is
 				// the level book firing on noise. Nothing downstream can develop through it.
-				// Printed with the values in force, not just the advice, because a threshold
-				// that was raised in the code but never reached a configured instance looks
-				// exactly like a threshold that did not work.
-				if (totalSweeps > 0 && barsProcessed / (double)totalSweeps < 8.0)
+				// Only worth flagging when the funnel downstream is actually starved. A high
+				// sweep rate on its own turned out to be harmless: raising penetration from
+				// ~4 points to ~10 left the rate identical, because with a level every few
+				// points there is always something nearby to poke past - depth is not what
+				// drives the count. The sequencing filters it out regardless, so this is now
+				// a note about a starved funnel, not about the number itself.
+				if (totalSweeps > 0 && barsProcessed / (double)totalSweeps < 8.0 && totalEntries * 200 < barsProcessed)
 				{
-					Print(string.Format("      NOTE: sweeps this frequent are noise. Penetration is currently max({0:N2} ATR, {1:N2} pts) - raise it.",
+					Print(string.Format("      NOTE: sweeps are frequent (penetration max({0:N2} ATR, {1:N2} pts)) and few reach an entry.",
 						MinPenetrationAtr, MinPenetrationPoints));
+					Print("            Level count, not penetration depth, is what drives the rate.");
 				}
 			}
 
@@ -1438,6 +1446,31 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			Print(string.Format("  Step 5 (VIX)         : {0}", totalRejectedVix));
+
+			if (vix != null && totalRejectedVix + vix.Confirmed > 0)
+			{
+				Print(string.Format("      no data {0}, source closed {1}, direction {2}, not at a level {3}, confirmed {4}",
+					vix.RejectedNoData, vix.RejectedStale, vix.RejectedDirection, vix.RejectedNotAtLevel, vix.Confirmed));
+
+				if (vix.MoveSamples > 0)
+				{
+					Print(string.Format("      |move| over {0} bars: min {1:N2}, mean {2:N2}, max {3:N2}, against a {4:N2} threshold",
+						VixLookbackBars, vix.MoveAbsMin, vix.MoveAbsMean, vix.MoveAbsMax, vix.LastThreshold));
+
+					// A threshold above everything the source ever did is not a filter, it is
+					// an off switch, and it should not take a backtest to notice.
+					if (vix.MoveAbsMax < vix.LastThreshold)
+						Print("      NOTE: the threshold is above every move measured. Lower 'VIX min move (ATR)'.");
+				}
+				else if (vix.RejectedNoData > 0)
+				{
+					Print("      NOTE: the VIX series produced no data. Check the symbol loads on its own chart.");
+				}
+				else if (vix.RejectedStale > 0)
+				{
+					Print("      NOTE: the VIX series was always stale. Its session does not overlap the chart's.");
+				}
+			}
 			Print(string.Format("  Step 6 (leaders)     : {0}{1}", totalRejectedBreadth,
 				breadthSkippedClosed > 0 ? string.Format("   ({0} skipped, leaders closed)", breadthSkippedClosed) : string.Empty));
 			Print(string.Format("  Stop band            : {0}", totalRejectedStop));
@@ -1732,12 +1765,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		[NinjaScriptProperty]
 		[Range(0, 20)]
-		[Display(Name = "VIX min move", Description = "Minimum VIX points of movement to count as directional agreement.", GroupName = "7. Step 5 - VIX", Order = 4)]
+		[Display(Name = "VIX min move (floor)", Description = "Absolute floor in VIX points. Kept low - it only rejects a dead-flat reading.", GroupName = "7. Step 5 - VIX", Order = 4)]
 		public double VixMinDirectionalMove { get; set; }
 
 		[NinjaScriptProperty]
+		[Range(0, 10)]
+		[Display(Name = "VIX min move (ATR)", Description = "The real threshold: the move must be this fraction of the VIX's own ATR. Scales with volatility, so the same test works at 3am and at midday. 0 leaves only the floor.", GroupName = "7. Step 5 - VIX", Order = 5)]
+		public double VixMinDirectionalMoveAtr { get; set; }
+
+		[NinjaScriptProperty]
 		[Range(0.01, 10)]
-		[Display(Name = "VIX key level tolerance", Description = "How close the VIX must be to one of its levels to count as reacting from it.", GroupName = "7. Step 5 - VIX", Order = 5)]
+		[Display(Name = "VIX key level tolerance", Description = "How close the VIX must be to one of its levels to count as reacting from it. Only used in Strict mode.", GroupName = "7. Step 5 - VIX", Order = 6)]
 		public double VixKeyLevelTolerance { get; set; }
 
 		[NinjaScriptProperty]

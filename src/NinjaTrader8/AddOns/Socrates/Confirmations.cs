@@ -62,8 +62,22 @@ namespace Socrates.Market
 		/// <summary>How close the VIX must be to one of its own levels to count as "at a level", in VIX points.</summary>
 		public double KeyLevelTolerance = 0.35;
 
-		/// <summary>Minimum VIX move against the trade direction, in VIX points, for directional agreement.</summary>
-		public double MinDirectionalMove = 0.10;
+		/// <summary>
+		/// Absolute floor on the VIX move needed for directional agreement, in VIX points.
+		/// Kept low - it exists to reject a dead-flat reading, not to be the real test.
+		/// </summary>
+		public double MinDirectionalMove = 0.02;
+
+		/// <summary>
+		/// The real threshold: the move must be at least this fraction of the VIX's own ATR.
+		///
+		/// A fixed 0.10 points was the original test and it does not travel. The VIX moves
+		/// very differently at 12 than at 30, and on a Globex chart it barely moves at all
+		/// overnight - so a fixed number that is reasonable during the cash session silently
+		/// becomes an impossible one at 3am, and the step refuses everything. Scaling to the
+		/// source's own volatility asks the same question at any hour.
+		/// </summary>
+		public double MinDirectionalMoveAtr = 0.5;
 
 		/// <summary>Strength assigned when direction agrees but the VIX is not reacting from a level.</summary>
 		public double WeakSignalStrength = 0.5;
@@ -85,9 +99,26 @@ namespace Socrates.Market
 
 		private double lastClose;
 		private double referenceClose;
+		private double lastAtr;
 		private int lastBarIndex;
 		private DateTime lastUpdateTime = DateTime.MinValue;
 		private bool hasData;
+
+		// Why the step said no. Four very different problems - a series that never loaded, a
+		// source that has closed for the night, a move that was real but too small, and a
+		// move that was big enough but not from a level - all previously arrived as one
+		// number in the summary, which is not enough to act on.
+		private int rejectedNoData;
+		private int rejectedStale;
+		private int rejectedDirection;
+		private int rejectedNotAtLevel;
+		private int confirmed;
+
+		private int moveSamples;
+		private double moveAbsMin = double.MaxValue;
+		private double moveAbsMax;
+		private double moveAbsSum;
+		private double lastThreshold;
 
 		public VixConfirmation(VixConfirmationSettings settings, MarketAnalyzer analyzer)
 		{
@@ -112,10 +143,27 @@ namespace Socrates.Market
 			analyzer.Update(barIndex, time, open, high, low, close, atr);
 			this.lastClose = close;
 			this.referenceClose = referenceClose;
+			this.lastAtr = atr;
 			this.lastBarIndex = barIndex;
 			this.lastUpdateTime = time;
 			hasData = true;
 		}
+
+		public int RejectedNoData { get { return rejectedNoData; } }
+		public int RejectedStale { get { return rejectedStale; } }
+		public int RejectedDirection { get { return rejectedDirection; } }
+		public int RejectedNotAtLevel { get { return rejectedNotAtLevel; } }
+		public int Confirmed { get { return confirmed; } }
+
+		/// <summary>Evaluations where a move was actually measured, i.e. data was present and current.</summary>
+		public int MoveSamples { get { return moveSamples; } }
+
+		public double MoveAbsMin { get { return moveSamples > 0 ? moveAbsMin : 0; } }
+		public double MoveAbsMax { get { return moveAbsMax; } }
+		public double MoveAbsMean { get { return moveSamples > 0 ? moveAbsSum / moveSamples : 0; } }
+
+		/// <summary>The threshold in force at the last measured evaluation, after ATR scaling.</summary>
+		public double LastThreshold { get { return lastThreshold; } }
 
 		/// <summary>
 		/// The VIX moves inversely to the Nasdaq, so a long NQ trade wants the VIX falling
@@ -130,6 +178,7 @@ namespace Socrates.Market
 
 			if (!hasData)
 			{
+				rejectedNoData++;
 				result.Detail = "No VIX data available for this bar.";
 				return result;
 			}
@@ -138,19 +187,37 @@ namespace Socrates.Market
 
 			if (settings.MaxDataAgeMinutes > 0 && ageMinutes > settings.MaxDataAgeMinutes)
 			{
-				result.Detail = string.Format("VIX data is {0:N0} minutes old - the index is closed, so it cannot confirm.", ageMinutes);
+				rejectedStale++;
+				result.Detail = string.Format("VIX data is {0:N0} minutes old - the source is closed, so it cannot confirm.", ageMinutes);
 				return result;
 			}
 
 			double move = lastClose - referenceClose;
 
+			// Scaled to the VIX's own volatility, with an absolute floor. Overnight the VIX
+			// hardly moves, and a threshold set for the cash session refuses everything.
+			double threshold = Math.Max(settings.MinDirectionalMove, lastAtr * settings.MinDirectionalMoveAtr);
+
+			lastThreshold = threshold;
+			moveSamples++;
+			double moveAbs = Math.Abs(move);
+			moveAbsSum += moveAbs;
+
+			if (moveAbs < moveAbsMin)
+				moveAbsMin = moveAbs;
+
+			if (moveAbs > moveAbsMax)
+				moveAbsMax = moveAbs;
+
 			bool directionAgrees = direction == TradeDirection.Long
-				? move <= -settings.MinDirectionalMove
-				: move >= settings.MinDirectionalMove;
+				? move <= -threshold
+				: move >= threshold;
 
 			if (!directionAgrees)
 			{
-				result.Detail = string.Format("VIX move {0:+0.00;-0.00} does not confirm {1}.", move, direction);
+				rejectedDirection++;
+				result.Detail = string.Format("VIX move {0:+0.00;-0.00} does not confirm {1} against a {2:N2} threshold.",
+					move, direction, threshold);
 				return result;
 			}
 
@@ -184,9 +251,14 @@ namespace Socrates.Market
 					move, direction);
 
 				if (settings.Mode == ConfirmationMode.Strict)
+				{
+					rejectedNotAtLevel++;
 					result.Agrees = false;
+					return result;
+				}
 			}
 
+			confirmed++;
 			return result;
 		}
 	}

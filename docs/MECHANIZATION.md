@@ -245,6 +245,21 @@ Your "carries less weight" line describes a weight, not a gate, so it is one. Th
 - `Directional` — direction only; the level test just reduces strength
 - `Off` — skip Step 5
 
+**Directional agreement** is a move of at least `max(VIX min move (floor),
+VIX min move (ATR) × the VIX's own ATR)` over `VIX lookback bars`, against the trade.
+
+The ATR term is the real test and the floor is only there to reject a dead-flat
+reading. A fixed 0.10 points was the first implementation and it does not travel: the
+VIX moves very differently at 12 than at 30, and on a Globex chart it barely moves at
+all overnight, so a threshold that is reasonable during the cash session silently
+becomes an impossible one at 3am. Scaling to the source's own volatility asks the same
+question at any hour.
+
+The run summary breaks the step's refusals into no data, source closed, direction, and
+not-at-a-level, and prints the distribution of moves actually measured against the
+threshold in force — because "step 5 rejected everything" has at least four causes and
+they need different fixes.
+
 With `Scale size by confirmation strength` enabled, a weak confirmation reduces
 position size instead of blocking the trade.
 
