@@ -130,6 +130,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int longEntries;
 		private int shortEntries;
 		private int breadthSkippedClosed;
+		private int vixBarsSeen;
+		private int vixUpdatesApplied;
 
 		protected override void OnStateChange()
 		{
@@ -711,6 +713,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private void UpdateVix()
 		{
+			// Counted separately so "no VIX data" can be resolved without a second run. A
+			// series that produced no bars, one that produced too few to warm up, and one
+			// feeding fine but rejected downstream are three different problems.
+			vixBarsSeen++;
+
 			if (vix == null || CurrentBars[idxVix] < Math.Max(VixLookbackBars, AtrPeriod) + 1)
 				return;
 
@@ -719,6 +726,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			vix.Update(CurrentBars[idxVix], Times[idxVix][0], Opens[idxVix][0],
 				Highs[idxVix][0], Lows[idxVix][0], Closes[idxVix][0], reference, vixAtr);
+
+			vixUpdatesApplied++;
 		}
 
 		private void UpdateBreadthComponent(int component)
@@ -1170,6 +1179,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			stopTicksSum = 0;
 			longSetups = shortSetups = longEntries = shortEntries = 0;
 			breadthSkippedClosed = 0;
+			vixBarsSeen = 0;
+			vixUpdatesApplied = 0;
 		}
 
 		/// <summary>
@@ -1464,7 +1475,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 				else if (vix.RejectedNoData > 0)
 				{
-					Print("      NOTE: the VIX series produced no data. Check the symbol loads on its own chart.");
+					int loaded = idxVix >= 0 && BarsArray != null && idxVix < BarsArray.Length && BarsArray[idxVix] != null
+						? BarsArray[idxVix].Count
+						: 0;
+
+					int warmup = Math.Max(VixLookbackBars, AtrPeriod) + 1;
+
+					Print(string.Format("      Series '{0}' at {1}-minute: {2} bars loaded, {3} reached OnBarUpdate, {4} fed the step (warm-up {5}).",
+						VixSymbol, VixBarMinutes, loaded, vixBarsSeen, vixUpdatesApplied, warmup));
+
+					if (loaded == 0)
+						Print("      NOTE: the series is empty. The strategy requests its own bar period and date range,");
+					else if (vixBarsSeen == 0)
+						Print("      NOTE: bars loaded but none reached the strategy. Session template mismatch;");
+					else
+						Print(string.Format("      NOTE: only {0} bars, short of the {1} needed to warm up;", vixBarsSeen, warmup));
+
+					Print("            so a symbol that charts fine can still arrive empty here. Open a chart at the");
+					Print(string.Format("            same period ({0}-minute) and date range to confirm the data exists.", VixBarMinutes));
 				}
 				else if (vix.RejectedStale > 0)
 				{
