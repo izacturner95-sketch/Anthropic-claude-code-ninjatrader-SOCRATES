@@ -97,6 +97,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int dayRejectedBreadth;
 		private int dayRejectedStop;
 		private int dayRejectedSizing;
+		private int dayRejectedRiskBudget;
 
 		private int totalSweeps;
 		private int totalShifts;
@@ -107,6 +108,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int totalRejectedBreadth;
 		private int totalRejectedStop;
 		private int totalRejectedSizing;
+		private int totalRejectedRiskBudget;
 
 		// "Blocked by risk" spans four very different situations - a session window that
 		// excludes most of a 24-hour chart is not the same problem as a daily loss halt.
@@ -142,6 +144,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int tradesScratch;
 		private double grossProfit;
 		private double grossLoss;
+		private double largestLoss;
 		private double runningEquity;
 		private double equityPeak;
 		private double maxDrawdown;
@@ -789,6 +792,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			dayRejectedBreadth = 0;
 			dayRejectedStop = 0;
 			dayRejectedSizing = 0;
+			dayRejectedRiskBudget = 0;
 			previousZoneTouched = false;
 
 			flattenedForDay = false;
@@ -1029,6 +1033,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
+			// The daily loss limit only ever looked backwards: RecordClosedTrade halts trading
+			// once the day is already down, which cannot stop a single trade from blowing
+			// through the cap on its own. With structural stops averaging more than the cap,
+			// that is not a corner case - it is every trade. Checked here, before the order,
+			// against what this trade actually stands to lose.
+			double intendedRisk = stopDistanceTicks * TickValueDollars * contracts;
+			double remainingBudget = MaxDailyLossDollars + Math.Min(0, risk.DailyRealisedPnL);
+
+			if (MaxDailyLossDollars > 0 && intendedRisk > remainingBudget)
+			{
+				dayRejectedRiskBudget++;
+				totalRejectedRiskBudget++;
+				Log(string.Format(
+					"Entry skipped: risking {0:C} ({1:N0} ticks x {2} contract(s)) against {3:C} left of today's {4:C} limit. {5}",
+					intendedRisk, stopDistanceTicks, contracts, remainingBudget, MaxDailyLossDollars, result.Detail));
+				return;
+			}
+
 			string label = result.Label;
 
 			SetStopLoss(label, CalculationMode.Price, stopPrice, false);
@@ -1195,9 +1217,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			daySweeps = dayShifts = dayZoneTouches = dayEntries = 0;
 			dayBlockedByRisk = dayRejectedVix = dayRejectedBreadth = dayRejectedStop = dayRejectedSizing = 0;
+			dayRejectedRiskBudget = 0;
 
 			totalSweeps = totalShifts = totalZoneTouches = totalEntries = 0;
 			totalBlockedByRisk = totalRejectedVix = totalRejectedBreadth = totalRejectedStop = totalRejectedSizing = 0;
+			totalRejectedRiskBudget = 0;
 
 			Array.Clear(blockReasonCounts, 0, blockReasonCounts.Length);
 			Array.Clear(stopTickBuckets, 0, stopTickBuckets.Length);
@@ -1212,7 +1236,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			pendingRiskDollars.Clear();
 			tradesWon = tradesLost = tradesScratch = 0;
-			grossProfit = grossLoss = 0;
+			grossProfit = grossLoss = largestLoss = 0;
 			runningEquity = equityPeak = maxDrawdown = 0;
 			rSamples = 0;
 			rSum = 0;
@@ -1428,6 +1452,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				tradesLost++;
 				grossLoss += -profitDollars;
+
+				if (-profitDollars > largestLoss)
+					largestLoss = -profitDollars;
 			}
 			else
 			{
@@ -1478,7 +1505,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Net                  : {0:C}   (gross +{1:C} / -{2:C})",
 				grossProfit - grossLoss, grossProfit, grossLoss));
 			Print(string.Format("  Profit factor        : {0}", grossLoss > 0 ? string.Format("{0:N2}", grossProfit / grossLoss) : "n/a, no losses"));
-			Print(string.Format("  Largest drawdown     : {0:C}  against a {1:C} daily cap", maxDrawdown, MaxDailyLossDollars));
+			Print(string.Format("  Largest drawdown     : {0:C}  (cumulative across the run, not one day)", maxDrawdown));
+
+			if (tradesLost > 0)
+			{
+				double averageLoss = grossLoss / tradesLost;
+
+				Print(string.Format("  Loss per trade       : average {0:C}, largest {1:C}", averageLoss, largestLoss));
+
+				// The comparison that matters for the daily limit. A cap smaller than a
+				// routine stop-out cannot be honoured by halting after the fact, which is
+				// why the limit is now also checked before each order goes out.
+				if (MaxDailyLossDollars > 0 && averageLoss > MaxDailyLossDollars)
+				{
+					Print(string.Format("  NOTE: an average losing trade costs more than the whole {0:C} daily limit.", MaxDailyLossDollars));
+					Print("        Entries are now refused when the trade's risk exceeds what is left of the day's");
+					Print("        budget, so raise the cap or switch to MNQ, or most setups will be turned away.");
+				}
+			}
 
 			if (rSamples > 0)
 			{
@@ -1521,7 +1565,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 
 			int completedSetups = totalEntries + totalBlockedByRisk + totalRejectedVix
-				+ totalRejectedBreadth + totalRejectedStop + totalRejectedSizing;
+				+ totalRejectedBreadth + totalRejectedStop + totalRejectedSizing + totalRejectedRiskBudget;
 
 			Print("=== Socrates NQ - run summary =====================================");
 			Print(string.Format("  Bars evaluated       : {0}", barsProcessed));
@@ -1635,6 +1679,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				breadthSkippedClosed > 0 ? string.Format("   ({0} skipped, leaders closed)", breadthSkippedClosed) : string.Empty));
 			Print(string.Format("  Stop band            : {0}", totalRejectedStop));
 			Print(string.Format("  Sizing               : {0}", totalRejectedSizing));
+			Print(string.Format("  Daily risk budget    : {0}", totalRejectedRiskBudget));
 
 			LogStopDistribution();
 			LogPerformance();

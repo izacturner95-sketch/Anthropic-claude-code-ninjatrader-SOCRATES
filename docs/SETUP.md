@@ -183,7 +183,12 @@ you a partial fill, a rejected order, or a disconnect mid-position.
 
 Before leaving the bot running without you at the screen:
 
-- [ ] **Max daily loss** set to a number you can genuinely absorb
+- [ ] **Max daily loss** set to a number you can genuinely absorb, **and larger than a
+      single stop-out**. The stop comes from structure, so its size varies; if a routine
+      losing trade costs more than the cap, the cap cannot do its job by halting after
+      the fact. Entries whose risk exceeds what is left of the day's budget are refused,
+      so a cap set too low shows up as trades quietly not being taken — the run summary
+      counts them under `Daily risk budget`.
 - [ ] **Flatten time** set, and verified working in sim
 - [ ] Behaviour after a **disconnect and reconnect** tested — kill your internet mid-position in sim
 - [ ] Behaviour on **restarting NinjaTrader with a position open** tested (`StartBehavior` is `WaitUntilFlat`, meaning the strategy will not adopt an existing position)
