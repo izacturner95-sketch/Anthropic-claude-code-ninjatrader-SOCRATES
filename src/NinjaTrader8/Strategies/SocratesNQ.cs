@@ -120,6 +120,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double stopTicksMax;
 		private double stopTicksSum;
 
+		// A strategy that only ever trades one way is either reading a one-way market or has
+		// an asymmetry in it. Counting both makes the difference visible.
+		private int longSetups;
+		private int shortSetups;
+		private int longEntries;
+		private int shortEntries;
+
 		protected override void OnStateChange()
 		{
 			if (State == State.SetDefaults)
@@ -213,20 +220,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 				TargetRMultiple = 2.0;
 				MinStopTicks = 20;
 
-				// This was 100 ticks (25 points), chosen so that two consecutive stop-outs on
-				// one NQ contract came to exactly the $1,000 daily cap. The arithmetic was
-				// tidy and the number was unreachable: entry is at the broken structure level
-				// and the stop sits beyond the swept extreme, so the distance between them is
-				// the whole displacement leg. On 5-minute NQ that leg is rarely under 25
-				// points, and a run of 45 completed setups produced zero fills.
+				// Only consulted when Stop loss (ticks) is 0 and the stop comes from structure.
 				//
-				// 200 ticks is 50 points. On NQ that is $1,000 a contract, so two stop-outs
-				// breach the daily cap - the startup banner says so, with the arithmetic. The
-				// three ways out are a $2,000 cap, MNQ instead of NQ (same 50 points costs
-				// $100), or accepting fewer trades by lowering this again. The run summary
-				// now prints the distribution of stop distances the setups actually asked
-				// for, so that is a decision with numbers behind it rather than a guess.
-				MaxStopTicks = 200;
+				// This band has twice been the thing that silently vetoed every trade - first
+				// at 100 ticks, then at 200, against measured structure stops of 169 to 810.
+				// It is a backstop, not the ceiling: 'Max setup risk (ATR)' is what actually
+				// bounds risk, and it does so in the units the market moves in rather than a
+				// fixed tick count. So this is set wide enough to stop being the binding
+				// constraint, and the banner prints what it implies against the daily cap.
+				MaxStopTicks = 400;
 
 				// --- Step 5: VIX ---
 				//
@@ -543,6 +545,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// Sampled here rather than in SubmitEntry so the distribution covers every
 			// completed setup, including the ones the risk gate turns away below.
 			RecordStopDistance(Math.Abs(Close[0] - result.StopPrice) / TickSize);
+
+			if (result.Direction == TradeDirection.Long)
+				longSetups++;
+			else
+				shortSetups++;
 
 			string blockDetail;
 			EntryBlockReason block = risk.CanEnter(timeOfDay, out blockDetail);
@@ -986,6 +993,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			dayEntries++;
 			totalEntries++;
 
+			if (bullish)
+				longEntries++;
+			else
+				shortEntries++;
+
 			Log(string.Format("ENTRY {0} x{1} @ ~{2:N2}, stop {3:N2}, target {4:N2}. {5} {6}",
 				result.Direction, contracts, entryPrice, stopPrice, targetPrice, result.Detail, sizingReason));
 
@@ -1126,6 +1138,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			stopTicksMin = 0;
 			stopTicksMax = 0;
 			stopTicksSum = 0;
+			longSetups = shortSetups = longEntries = shortEntries = 0;
 		}
 
 		/// <summary>
@@ -1167,6 +1180,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			LogRiskConsistency();
+
+			// NinjaTrader keeps the parameter values you configured on an instance, so a
+			// changed default does not reach a strategy that already exists on a chart or in
+			// an Analyzer template. Printing what is actually in effect is the only way to
+			// tell a threshold that did not work from one that was never applied.
+			Print("  --- thresholds in effect ---");
+			Print(string.Format("  Sweep        : penetration max({0:N2} ATR, {1:N2} pts), reclaim within {2} bars",
+				MinPenetrationAtr, MinPenetrationPoints, MaxBarsToReclaim));
+			Print(string.Format("  Levels       : zone half-width {0:N2} ATR, merge within {1:N2} ATR, opening range {2} min",
+				ZoneHalfWidthAtr, LevelMergeAtr, OpeningRangeMinutes));
+			Print(string.Format("  Structure    : swing strength {0}, displacement {1:N2} ATR, max setup risk {2:N2} ATR, {3} bars to shift",
+				SwingStrength, MinDisplacementAtr, MaxSetupRiskAtr, MaxBarsSweepToShift));
+			Print(string.Format("  Retest       : zone {0} +/- {1:N2} ATR, {2} bars to retest, confirmation close {3}",
+				ZoneMode, RetestZoneAtr, MaxBarsShiftToRetest, RequireConfirmationClose ? "required" : "not required"));
 
 			Print("===================================================================");
 		}
@@ -1291,8 +1318,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Structure shifts (3) : {0}", totalShifts));
 			Print(string.Format("      discarded, too wide: {0}", setup != null ? setup.DiscardedTooWide : 0));
 			Print(string.Format("  Retests reached (4)  : {0}", totalZoneTouches));
-			Print(string.Format("  Setups completed     : {0}", completedSetups));
-			Print(string.Format("  Entries submitted    : {0}", totalEntries));
+			Print(string.Format("  Setups completed     : {0}  ({1} long / {2} short)", completedSetups, longSetups, shortSetups));
+			Print(string.Format("  Entries submitted    : {0}  ({1} long / {2} short)", totalEntries, longEntries, shortEntries));
+
+			if (nq != null && nq.Sweeps.AmbiguousBars > 0)
+				Print(string.Format("  Bars sweeping both sides at once: {0} (resolved to the deeper raid)", nq.Sweeps.AmbiguousBars));
 			Print("  --- of the completed setups, rejected by ---");
 			Print(string.Format("  Risk gate            : {0}", totalBlockedByRisk));
 

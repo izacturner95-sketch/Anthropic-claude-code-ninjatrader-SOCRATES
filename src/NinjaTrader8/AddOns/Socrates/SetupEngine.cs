@@ -308,6 +308,20 @@ namespace Socrates.Market
 				return result;
 			}
 
+			// The same ceiling as at the shift, applied again to the distance that actually
+			// gets traded. Checking it once at the shift bounds structure-to-extreme, but
+			// entry is the confirmation bar's close, and the only constraint on that close is
+			// that it finished in the trade's direction - it can be a long way past the zone
+			// by then. Without this the cap held on paper while entries ran well beyond it.
+			if (settings.MaxSetupRiskAtr > 0 && risk > atr * settings.MaxSetupRiskAtr)
+			{
+				discardedTooWide++;
+				Reset(string.Format(
+					"Entry at {0:N2} is {1:N2} pts from the stop, over the {2:N2} allowed ({3:N1} ATR). Setup discarded.",
+					close, risk, atr * settings.MaxSetupRiskAtr, settings.MaxSetupRiskAtr));
+				return result;
+			}
+
 			double targetPrice;
 			if (settings.TargetRMultiple > 0)
 			{

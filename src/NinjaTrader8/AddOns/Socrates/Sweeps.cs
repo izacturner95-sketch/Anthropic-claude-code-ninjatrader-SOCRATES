@@ -76,6 +76,7 @@ namespace Socrates.Market
 		private readonly SweepSettings settings;
 		private Candidate buySide;
 		private Candidate sellSide;
+		private int ambiguousBars;
 
 		public SweepDetector(SweepSettings settings)
 		{
@@ -86,6 +87,9 @@ namespace Socrates.Market
 		}
 
 		public SweepEvent LastSweep { get; private set; }
+
+		/// <summary>Bars where both sides reclaimed at once and one had to be chosen over the other.</summary>
+		public int AmbiguousBars { get { return ambiguousBars; } }
 
 		public void Reset()
 		{
@@ -99,7 +103,8 @@ namespace Socrates.Market
 		/// </summary>
 		public SweepEvent Update(int barIndex, DateTime time, double high, double low, double close, double atr, LevelBook levels)
 		{
-			SweepEvent result = default(SweepEvent);
+			SweepEvent buyResult = default(SweepEvent);
+			SweepEvent sellResult = default(SweepEvent);
 
 			double minPenetration = Math.Max(settings.MinPenetrationPoints, atr * settings.MinPenetrationAtr);
 			double searchDistance = Math.Max(atr * settings.LevelSearchAtr, minPenetration * 4.0);
@@ -142,16 +147,15 @@ namespace Socrates.Market
 
 				if (close < buySide.Level.Price)
 				{
-					result.IsValid = true;
-					result.Side = SweepSide.BuySide;
-					result.Level = buySide.Level;
-					result.ExtremePrice = buySide.Extreme;
-					result.ExtremeBarIndex = buySide.ExtremeBarIndex;
-					result.ConfirmBarIndex = barIndex;
-					result.ConfirmTime = time;
-					result.PenetrationPoints = buySide.Extreme - buySide.Level.Price;
+					buyResult.IsValid = true;
+					buyResult.Side = SweepSide.BuySide;
+					buyResult.Level = buySide.Level;
+					buyResult.ExtremePrice = buySide.Extreme;
+					buyResult.ExtremeBarIndex = buySide.ExtremeBarIndex;
+					buyResult.ConfirmBarIndex = barIndex;
+					buyResult.ConfirmTime = time;
+					buyResult.PenetrationPoints = buySide.Extreme - buySide.Level.Price;
 
-					buySide.Level.Touches++;
 					buySide = default(Candidate);
 				}
 				else if (barIndex - buySide.StartBarIndex >= settings.MaxBarsToReclaim)
@@ -197,21 +201,14 @@ namespace Socrates.Market
 
 				if (close > sellSide.Level.Price)
 				{
-					// A bar that reclaims both sides is ambiguous; the buy-side result wins
-					// only if nothing has been recorded yet, otherwise this one is skipped.
-					if (!result.IsValid)
-					{
-						result.IsValid = true;
-						result.Side = SweepSide.SellSide;
-						result.Level = sellSide.Level;
-						result.ExtremePrice = sellSide.Extreme;
-						result.ExtremeBarIndex = sellSide.ExtremeBarIndex;
-						result.ConfirmBarIndex = barIndex;
-						result.ConfirmTime = time;
-						result.PenetrationPoints = sellSide.Level.Price - sellSide.Extreme;
-
-						sellSide.Level.Touches++;
-					}
+					sellResult.IsValid = true;
+					sellResult.Side = SweepSide.SellSide;
+					sellResult.Level = sellSide.Level;
+					sellResult.ExtremePrice = sellSide.Extreme;
+					sellResult.ExtremeBarIndex = sellSide.ExtremeBarIndex;
+					sellResult.ConfirmBarIndex = barIndex;
+					sellResult.ConfirmTime = time;
+					sellResult.PenetrationPoints = sellSide.Level.Price - sellSide.Extreme;
 
 					sellSide = default(Candidate);
 				}
@@ -221,8 +218,27 @@ namespace Socrates.Market
 				}
 			}
 
+			// A bar that reclaims both sides is genuinely ambiguous. This used to resolve by
+			// evaluation order - buy-side was written first and sell-side only filled in if
+			// nothing was there - which is a standing bias toward short setups for no reason
+			// anyone chose. The deeper raid is the one that took more liquidity, so it wins.
+			SweepEvent result;
+
+			if (buyResult.IsValid && sellResult.IsValid)
+			{
+				result = buyResult.PenetrationPoints >= sellResult.PenetrationPoints ? buyResult : sellResult;
+				ambiguousBars++;
+			}
+			else
+			{
+				result = buyResult.IsValid ? buyResult : sellResult;
+			}
+
 			if (result.IsValid)
+			{
+				result.Level.Touches++;
 				LastSweep = result;
+			}
 
 			return result;
 		}
