@@ -194,7 +194,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 				SessionStartTime = 94500;
 				SessionEndTime = 154500;
 				FlattenTime = 155500;
-				MaxDailyLossDollars = 1000;
+				// Off. A cap smaller than a routine stop-out cannot be honoured, and at $1,000
+				// against structural stops averaging 228 ticks it was refusing most setups -
+				// which is not a risk control, it is a mute button on the strategy. Set a
+				// number here to switch it back on; it then halts the day when reached and
+				// refuses any entry risking more than the day has left.
+				//
+				// This is a backtesting default. Put a real number on it before anything
+				// trades unattended.
+				MaxDailyLossDollars = 0;
 				DailyProfitTargetDollars = 0;
 				StopForDayOnProfitTarget = false;
 				MaxTradesPerDay = 3;
@@ -469,8 +477,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			else if (State == State.Realtime)
 			{
-				Log(string.Format("Realtime. {0} contract(s) max {1}, stop {2}, daily loss cap {3:C}, VIX={4}, breadth={5}.",
-					FixedContracts, MaxContracts, DescribeStop(), MaxDailyLossDollars, VixMode, BreadthMode));
+				Log(string.Format("Realtime. {0} contract(s) max {1}, stop {2}, daily loss cap {3}, VIX={4}, breadth={5}.",
+					FixedContracts, MaxContracts, DescribeStop(), DescribeDailyCap(), VixMode, BreadthMode));
 			}
 			else if (State == State.Terminated)
 			{
@@ -1259,7 +1267,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Instrument      : {0}", Instrument != null ? Instrument.FullName : "unknown"));
 			Print(string.Format("  Calculate       : {0}, bars required {1}", Calculate, BarsRequiredToTrade));
 			Print(string.Format("  Trading hours   : {0}", DescribeSession()));
-			Print(string.Format("  Sizing          : {0} contract(s), max {1}, daily loss cap {2:C}", FixedContracts, MaxContracts, MaxDailyLossDollars));
+			Print(string.Format("  Sizing          : {0} contract(s), max {1}, daily loss cap {2}", FixedContracts, MaxContracts, DescribeDailyCap()));
 			Print(string.Format("  Stop            : {0}", DescribeStop()));
 			Print(string.Format("  Step 5 (VIX)    : {0}{1}", VixMode, VixMode == ConfirmationMode.Off ? string.Empty : " on " + VixSymbol));
 			Print(string.Format("  Step 6 (leaders): {0}{1}", BreadthMode, BreadthMode == ConfirmationMode.Off ? string.Empty : " on " + BreadthSymbols));
@@ -1329,14 +1337,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 		/// </summary>
 		private void LogRiskConsistency()
 		{
-			if (MaxDailyLossDollars <= 0 || MaxConsecutiveLosses <= 0)
-				return;
-
 			// The stop is structural, so its size is not known in advance. MaxStopTicks is the
 			// only hard ceiling on it, which makes it the worst case for this arithmetic.
 			int worstStopTicks = MaxStopTicks;
 			int contracts = Math.Max(1, MaxContracts);
-			double worstCase = worstStopTicks * TickValueDollars * contracts * MaxConsecutiveLosses;
+			double worstTrade = worstStopTicks * TickValueDollars * contracts;
+
+			// Printed whether or not a cap is set. With no cap this is the only statement of
+			// what a single trade can cost, and it should not go missing simply because
+			// nothing is checking it.
+			if (MaxDailyLossDollars <= 0)
+			{
+				Print(string.Format("  Worst trade     : {0} ticks x {1:C} x {2} contract(s) = {3:C}. No daily loss cap set.",
+					worstStopTicks, TickValueDollars, contracts, worstTrade));
+
+				Print(MaxConsecutiveLosses > 0
+					? string.Format("                    {0} consecutive losses halt the day; nothing else limits it.", MaxConsecutiveLosses)
+					: "                    Nothing halts the day. Every setup that passes is taken.");
+
+				return;
+			}
+
+			if (MaxConsecutiveLosses <= 0)
+			{
+				Print(string.Format("  Worst trade     : {0:C}, against a {1:C} daily cap with no consecutive-loss halt.",
+					worstTrade, MaxDailyLossDollars));
+				return;
+			}
+
+			double worstCase = worstTrade * MaxConsecutiveLosses;
 
 			if (worstCase <= MaxDailyLossDollars)
 			{
@@ -1389,6 +1418,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			return string.Format("{0}, entries {1:000000}-{2:000000}, flat by {3:000000}",
 				TradingHours, effectiveSessionStart, effectiveSessionEnd, effectiveFlatten);
+		}
+
+		private string DescribeDailyCap()
+		{
+			return MaxDailyLossDollars > 0 ? string.Format("{0:C}", MaxDailyLossDollars) : "none";
 		}
 
 		private string DescribeStop()
@@ -1796,7 +1830,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		[NinjaScriptProperty]
 		[Range(0, double.MaxValue)]
-		[Display(Name = "Max daily loss ($)", GroupName = "2. Risk", Order = 4)]
+		[Display(Name = "Max daily loss ($)", Description = "0 disables it. When set, it halts the day once reached and refuses any entry risking more than the day has left - so it must be larger than a single stop-out or it turns away most setups.", GroupName = "2. Risk", Order = 4)]
 		public double MaxDailyLossDollars { get; set; }
 
 		[NinjaScriptProperty]
