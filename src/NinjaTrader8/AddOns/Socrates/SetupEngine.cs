@@ -113,6 +113,8 @@ namespace Socrates.Market
 		private double zoneHalfWidth;
 		private bool zoneTouched;
 		private int discardedTooWide;
+		private int sweepsAdopted;
+		private int sweepsIgnored;
 
 		public SetupEngine(SetupEngineSettings settings)
 		{
@@ -130,6 +132,12 @@ namespace Socrates.Market
 
 		/// <summary>Running count of setups abandoned because the structure was too far from the swept extreme to trade against.</summary>
 		public int DiscardedTooWide { get { return discardedTooWide; } }
+
+		/// <summary>Sweeps that started or replaced a setup.</summary>
+		public int SweepsAdopted { get { return sweepsAdopted; } }
+
+		/// <summary>Sweeps left alone because a setup was already developing. A high ratio here means the level book is generating noise.</summary>
+		public int SweepsIgnored { get { return sweepsIgnored; } }
 
 		public string LastTransition { get; private set; }
 
@@ -152,24 +160,29 @@ namespace Socrates.Market
 			SetupResult result = default(SetupResult);
 			LastTransition = null;
 
-			// A fresh sweep always restarts the sequence, even mid-setup: the newer liquidity
-			// event is the relevant one.
 			SweepEvent fresh = analyzer.LastUpdateSweep;
+
 			if (fresh.IsValid)
 			{
-				sweep = fresh;
-				state = SetupState.AwaitingStructureShift;
-				zoneTouched = false;
+				if (ShouldAdopt(fresh))
+				{
+					sweepsAdopted++;
+					sweep = fresh;
+					state = SetupState.AwaitingStructureShift;
+					zoneTouched = false;
 
-				structureReference = sweep.Side == SweepSide.SellSide
-					? analyzer.Swings.MostRecentHighAtOrBefore(sweep.ConfirmBarIndex)
-					: analyzer.Swings.MostRecentLowAtOrBefore(sweep.ConfirmBarIndex);
+					structureReference = sweep.Side == SweepSide.SellSide
+						? analyzer.Swings.MostRecentHighAtOrBefore(sweep.ConfirmBarIndex)
+						: analyzer.Swings.MostRecentLowAtOrBefore(sweep.ConfirmBarIndex);
 
-				LastTransition = string.Format("Sweep {0} of {1} ({2:N2} penetration). Awaiting structure shift; reference {3}.",
-					sweep.Side, sweep.Level, sweep.PenetrationPoints,
-					structureReference.IsValid ? structureReference.ToString() : "none yet");
+					LastTransition = string.Format("Sweep {0} of {1} ({2:N2} penetration). Awaiting structure shift; reference {3}.",
+						sweep.Side, sweep.Level, sweep.PenetrationPoints,
+						structureReference.IsValid ? structureReference.ToString() : "none yet");
 
-				return result;
+					return result;
+				}
+
+				sweepsIgnored++;
 			}
 
 			if (state == SetupState.Idle)
@@ -318,6 +331,42 @@ namespace Socrates.Market
 
 			Reset("Entry taken.");
 			return result;
+		}
+
+		/// <summary>
+		/// Whether a newly confirmed sweep should replace the setup in progress.
+		///
+		/// This used to be unconditional, on the reasoning that the newer liquidity event is
+		/// the more relevant one. With a dense level book that is wrong: sweeps confirm every
+		/// few bars, so every setup was demolished and restarted long before it could develop.
+		/// A post-sweep swing alone needs (2 x strength) + 1 bars to confirm, which it never
+		/// got. Nothing downstream could work, and the counters blamed the steps that never
+		/// ran rather than the restart that stopped them.
+		///
+		/// The anchor now holds unless the new sweep is genuinely more relevant: the market
+		/// turning the other way, or price reaching further into the same liquidity, which
+		/// moves where the protective stop belongs.
+		/// </summary>
+		private bool ShouldAdopt(SweepEvent fresh)
+		{
+			if (state == SetupState.Idle || !sweep.IsValid)
+				return true;
+
+			// The other side taking liquidity supersedes whatever we were watching.
+			if (fresh.Side != sweep.Side)
+				return true;
+
+			// A deeper extreme on the same side is the same setup with a better stop.
+			bool deeper = fresh.Side == SweepSide.SellSide
+				? fresh.ExtremePrice < sweep.ExtremePrice
+				: fresh.ExtremePrice > sweep.ExtremePrice;
+
+			if (deeper)
+				return true;
+
+			// Anything else is a shallower poke at a neighbouring level while the setup we
+			// already have is still developing. Let it develop.
+			return false;
 		}
 
 		private void BuildRetestZone(double atr)

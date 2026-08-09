@@ -127,6 +127,18 @@ namespace Socrates.Market
 			this.maxStructuralLevels = Math.Max(4, maxStructuralLevels);
 		}
 
+		/// <summary>
+		/// Session levels closer together than this are treated as one area rather than
+		/// stacked. Three pivot formulas landing within a point of each other describe one
+		/// place on the chart, but as three separate levels they widen the band price has to
+		/// be inside to count as sweeping something, and each one can trip the sweep detector
+		/// on its own. Set per rebuild, in price units. Zero keeps every level.
+		/// </summary>
+		public double SessionLevelMinSeparation { get; set; }
+
+		/// <summary>Session levels discarded as duplicates of an area already in the book, since the last clear.</summary>
+		public int SessionLevelsMerged { get; private set; }
+
 		public IEnumerable<Level> All
 		{
 			get
@@ -147,6 +159,7 @@ namespace Socrates.Market
 		public void ClearSessionLevels()
 		{
 			sessionLevels.Clear();
+			SessionLevelsMerged = 0;
 		}
 
 		public void ClearDynamicLevels()
@@ -171,6 +184,21 @@ namespace Socrates.Market
 		{
 			if (double.IsNaN(price) || double.IsInfinity(price) || price <= 0)
 				return;
+
+			// Callers add in order of significance - prior day and week before the pivots
+			// derived from them - so the level already in the book is the one worth keeping.
+			if (SessionLevelMinSeparation > 0)
+			{
+				for (int i = 0; i < sessionLevels.Count; i++)
+				{
+					if (Math.Abs(sessionLevels[i].Price - price) < SessionLevelMinSeparation)
+					{
+						sessionLevels[i].HalfWidth = Math.Max(sessionLevels[i].HalfWidth, halfWidth);
+						SessionLevelsMerged++;
+						return;
+					}
+				}
+			}
 
 			Level level = new Level();
 			level.Kind = kind;

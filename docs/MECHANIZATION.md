@@ -82,7 +82,7 @@ already a precondition for everything downstream.
 A sweep is two events, and the second is what distinguishes it from a breakout:
 
 1. **Penetration** — a bar trades beyond a level's zone edge by at least
-   `max(0.10 × ATR, 1.0 point)`. A one-tick poke is noise.
+   `max(0.25 × ATR, 2.0 points)`. A one-tick poke is noise, and so is a two-point one.
 2. **Reclaim** — a bar closes back on the original side of that level, within 6 bars.
 
 If the reclaim never comes within those 6 bars, the candidate is **discarded as a
@@ -95,7 +95,7 @@ level — that is the pool price actually reached for.
 | Decision I made | Parameter | Needs your sign-off |
 |---|---|---|
 | Reclaim window of 6 bars | `Max bars to reclaim` | How long do you give a sweep to fail before calling it a real breakout? |
-| Min penetration 0.10 × ATR or 1 pt | `Min penetration (ATR)` / `(points)` | Too small catches noise; too large misses shallow raids. |
+| Min penetration 0.25 × ATR or 2 pts | `Min penetration (ATR)` / `(points)` | Started at 0.10 ATR / 1 pt and fired every four bars. Too small catches noise; too large misses shallow raids. |
 | Reclaim = **close** back inside, not just a wick | — | Say if a wick back inside should count. |
 
 ---
@@ -135,6 +135,14 @@ Two consequences of that fix:
   the structure sits further than that from the swept extreme, the setup is discarded at
   the shift rather than carried to the retest and rejected on stop size — which reads as
   a sizing problem and is not one.
+
+A third consequence, found once the near-swing rule exposed it: a newly confirmed sweep
+used to restart the sequence unconditionally, on the reasoning that the newest liquidity
+event is the most relevant one. Against a level book of thirty-odd lines, sweeps confirm
+every few bars, so every setup was demolished and restarted long before it could
+develop — 498 sweeps produced 4 structure evaluations. The anchor now holds unless the
+new sweep is on the opposite side, or reaches further into the same liquidity and so
+moves where the stop belongs. Everything else is left alone while the setup develops.
 
 **"Strong displacement"** became: the bar that breaks structure must have a range of at
 least 1.0 × ATR. If structure breaks on a weak bar, the setup is **not** discarded — it
@@ -260,11 +268,13 @@ as roughly that many points.
 | Parameter | Default | In 5-minute terms |
 |---|---|---|
 | `Swing strength` | 3 | A swing confirms 15 minutes after it forms |
-| `Min penetration (ATR)` | 0.10 | ~2.5 points beyond a zone edge |
+| `Min penetration (ATR)` | 0.25 | ~5 points beyond a zone edge |
 | `Max bars to reclaim` | 6 | 30 minutes to fail, or it was a real breakout |
-| `Max bars sweep to shift` | 12 | 1 hour to break structure |
+| `Max bars sweep to shift` | 20 | 100 minutes to break structure |
 | `Max bars shift to retest` | 15 | 75 minutes to come back |
 | `Min displacement (ATR)` | 1.0 | The breaking bar must be larger than an average bar |
+| `Max setup risk (ATR)` | 2.5 | Structure no further than ~50 points from the swept extreme |
+| `Level merge distance (ATR)` | 0.35 | Session levels within ~7 points are one area |
 | `Order block displacement (ATR)` | 1.0 | Same test, plus an imbalance |
 | `Order block origin lookback` | 10 | 50 minutes back to find the opposing candle |
 | `Opening range (minutes)` | 15 | Completes at 09:45 |

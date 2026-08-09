@@ -170,6 +170,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				UseFourHourPivots = true;
 				OpeningRangeMinutes = 15;
 				ZoneHalfWidthAtr = 0.25;
+				LevelMergeAtr = 0.35;
 				UseOrderBlocks = true;
 				OrderBlockRequireImbalance = true;
 				OrderBlockDisplacementAtr = 1.0;
@@ -177,8 +178,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 				OrderBlockZone = OrderBlockZoneMode.FullRange;
 
 				// --- Step 2: liquidity ---
-				MinPenetrationAtr = 0.10;
-				MinPenetrationPoints = 1.0;
+				//
+				// 0.10 ATR and 1 point were noise thresholds: on 5-minute NQ that is a two
+				// point poke, which price does constantly. Against a level book of thirty-odd
+				// lines it produced a confirmed sweep every four bars - 498 in a 2,065 bar
+				// sample - and nothing downstream survived the churn. A sweep is supposed to
+				// be a raid on liquidity, not a wiggle.
+				MinPenetrationAtr = 0.25;
+				MinPenetrationPoints = 2.0;
 				MaxBarsToReclaim = 6;
 
 				// --- Step 3: structure ---
@@ -793,6 +800,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double halfWidth = atr * ZoneHalfWidthAtr;
 			DateTime now = Time[0];
 
+			// Daily, weekly and 4-hour pivot sets routinely land on top of each other. Left
+			// stacked they triple-count one area and give the sweep detector three chances to
+			// fire on the same wiggle.
+			nq.Levels.SessionLevelMinSeparation = atr * LevelMergeAtr;
+
 			// Each reference series is optional. A chart loaded with five days of history has
 			// one weekly bar, and requiring a completed prior week there would silence the
 			// whole strategy - no levels, no sweeps, no prints. Missing history costs the
@@ -861,9 +873,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				sessionLevelsBuilt = true;
 
 				Log(haveDaily
-					? string.Format("Context built: PDH {0:N2}, PDL {1:N2}, PDC {2:N2}, {3} levels in play.",
-						pdh, pdl, pdc, nq.Levels.Count)
-					: string.Format("Context built without prior-day data: {0} levels in play.", nq.Levels.Count));
+					? string.Format("Context built: PDH {0:N2}, PDL {1:N2}, PDC {2:N2}, {3} levels in play ({4} merged as duplicates).",
+						pdh, pdl, pdc, nq.Levels.Count, nq.Levels.SessionLevelsMerged)
+					: string.Format("Context built without prior-day data: {0} levels in play ({1} merged as duplicates).",
+						nq.Levels.Count, nq.Levels.SessionLevelsMerged));
 			}
 		}
 
@@ -1221,7 +1234,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			Print("=== Socrates NQ - run summary =====================================");
 			Print(string.Format("  Bars evaluated       : {0}", barsProcessed));
-			Print(string.Format("  Sweeps (step 2)      : {0}", totalSweeps));
+			Print(string.Format("  Sweeps (step 2)      : {0}{1}", totalSweeps,
+				barsProcessed > 0 ? string.Format("  (one per {0:N1} bars)", barsProcessed / (double)Math.Max(1, totalSweeps)) : string.Empty));
+
+			if (setup != null)
+			{
+				Print(string.Format("      adopted / ignored  : {0} / {1}", setup.SweepsAdopted, setup.SweepsIgnored));
+
+				// A sweep every few bars is not a market taking liquidity that often, it is
+				// the level book firing on noise. Nothing downstream can develop through it.
+				if (totalSweeps > 0 && barsProcessed / (double)totalSweeps < 8.0)
+					Print("      NOTE: sweeps this frequent are noise. Raise 'Min penetration' or 'Level merge distance'.");
+			}
+
 			Print(string.Format("  Structure shifts (3) : {0}", totalShifts));
 			Print(string.Format("      discarded, too wide: {0}", setup != null ? setup.DiscardedTooWide : 0));
 			Print(string.Format("  Retests reached (4)  : {0}", totalZoneTouches));
@@ -1413,6 +1438,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0.01, 5)]
 		[Display(Name = "Zone half-width (ATR)", Description = "How wide a swing level's zone is, as a multiple of ATR.", GroupName = "3. Step 1 - Context", Order = 4)]
 		public double ZoneHalfWidthAtr { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 5)]
+		[Display(Name = "Level merge distance (ATR)", Description = "Session levels closer than this are one area, not several. Raise it to thin a crowded level book. 0 keeps every level.", GroupName = "3. Step 1 - Context", Order = 10)]
+		public double LevelMergeAtr { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Use order blocks", Description = "Detect supply and demand as the last opposing candle before a displacement move.", GroupName = "3. Step 1 - Context", Order = 5)]
