@@ -242,10 +242,19 @@ Your "carries less weight" line describes a weight, not a gate, so it is one. Th
 With `Scale size by confirmation strength` enabled, a weak confirmation reduces
 position size instead of blocking the trade.
 
-> **Data dependency.** This step needs `^VIX` in your data feed. Kinetick carries it;
-> several broker feeds do not. The VIX index also only publishes during CBOE hours, so
-> it cannot confirm anything overnight. If your feed lacks it, the alternatives are VIX
-> futures (`VX`, nearly 24-hour) or setting VIX mode to Off.
+> **Data dependency.** This step defaults to the continuous VIX future, `VX ##-##`,
+> rather than the `^VIX` index, and the reason is the overnight session: the index is
+> only published around the cash hours, so on a Globex chart it is dark for most of the
+> night and cannot confirm anything. VX trades close to 23 hours.
+>
+> The future prices in contango rather than tracking spot exactly. That does not matter
+> here — the step reads direction over a lookback and proximity to its own levels, not
+> the absolute number. Either symbol must exist in your feed; the banner warns if `^VIX`
+> is combined with extended hours.
+>
+> Readings are refused once older than three of their own bars. A source that has gone
+> quiet is not evidence, and silently agreeing with a price from hours earlier would be
+> worse than failing.
 
 ---
 
@@ -264,11 +273,26 @@ scores 0.6, which matters when confidence sizing is on.
 If some symbols have no data, the threshold scales down proportionally rather than
 blocking every trade.
 
+**Outside the leaders' session the step is skipped, not failed.** There is no overnight
+ticker for these names — AAPL is AAPL in every session, extended-hours equity trading
+runs roughly 04:00–09:30 and 16:00–20:00 ET, and from 20:00 to 04:00 it is dark
+everywhere. Requiring participation from a shut market would refuse every overnight
+setup for want of data that does not exist. So the step applies inside
+`Leaders open`–`Leaders close`, 09:30–16:00 ET by default, and is skipped outside it.
+The run summary counts the skips so the step's real coverage is visible.
+
+The skip is deliberately narrow. It applies when the leaders traded and then went
+quiet — a closed market — and not when a symbol has never produced a bar at all. That
+second case is a feed or symbol problem, and quietly disabling a confirmation because
+of it would be exactly the kind of silent failure the rest of this file exists to
+prevent, so it still fails loudly.
+
 | Decision I made | Parameter | Needs your sign-off |
 |---|---|---|
 | Participation = above/below **session open** | — | Or would you rather use above VWAP, or momentum over N bars? |
 | 5 of 7 required | `Min leaders aligned` | |
 | Symbol list is editable text | `Leader symbols` | Add or drop names freely |
+| Step skipped outside 09:30–16:00 ET | `Leaders open` / `Leaders close` | Set them equal to apply the step around the clock, which on a Globex chart means refusing every overnight setup. |
 
 ---
 

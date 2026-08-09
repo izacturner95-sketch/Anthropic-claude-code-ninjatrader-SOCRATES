@@ -129,6 +129,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int shortSetups;
 		private int longEntries;
 		private int shortEntries;
+		private int breadthSkippedClosed;
 
 		protected override void OnStateChange()
 		{
@@ -248,7 +249,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// no prints and no trades at all. Turn these on once you have confirmed the
 				// symbols load on a chart of their own.
 				VixMode = ConfirmationMode.Off;
-				VixSymbol = "^VIX";
+
+				// VIX futures rather than the ^VIX index. The index is only disseminated
+				// around the cash session, so on a Globex chart it goes dark for most of the
+				// night and cannot confirm anything; VX trades close to 23 hours. It prices
+				// in contango rather than tracking spot exactly, which does not matter here -
+				// the step reads direction and levels, not the absolute number.
+				VixSymbol = "VX ##-##";
 				VixBarMinutes = 5;
 				VixLookbackBars = 6;
 				VixMinDirectionalMove = 0.10;
@@ -260,6 +267,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 				BreadthBarMinutes = 5;
 				BreadthMinAligned = 5;
 				BreadthMinMovePercent = 0.05;
+
+				// The leaders only trade the cash session, and there is no ticker that fixes
+				// that - AAPL is AAPL, and 20:00 to 04:00 ET it is dark everywhere. So step 6
+				// applies inside this window and is skipped outside it, rather than failing
+				// every overnight setup for want of data it was never going to have.
+				BreadthActiveStart = 93000;
+				BreadthActiveEnd = 160000;
 
 				EnableLogging = true;
 				VerboseLogging = false;
@@ -406,7 +420,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 							Mode = BreadthMode,
 							MinAligned = BreadthMinAligned,
 							MinMovePercent = BreadthMinMovePercent,
-							MaxDataAgeMinutes = BreadthBarMinutes * 3
+							MaxDataAgeMinutes = BreadthBarMinutes * 3,
+							SkipWhenClosed = true
 						}, breadthSymbols);
 					}
 				}
@@ -583,7 +598,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
-			EvaluateConfirmationsAndEnter(result, atr);
+			EvaluateConfirmationsAndEnter(result, atr, timeOfDay);
 		}
 
 		/// <summary>
@@ -636,7 +651,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		#region Steps 5 and 6
 
-		private void EvaluateConfirmationsAndEnter(SetupResult result, double atr)
+		private void EvaluateConfirmationsAndEnter(SetupResult result, double atr, int timeOfDay)
 		{
 			double strength = 1.0;
 
@@ -659,8 +674,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 					Log("Step 5 passed: " + vixResult.Detail);
 			}
 
-			// Step 6.
-			if (breadth != null)
+			// Step 6, only while the leaders are open. Outside that window there is no data
+			// to be had at any ticker, so the step is skipped rather than failed - a shut
+			// equity market is not evidence against an overnight NQ trade.
+			if (breadth != null && !IsWithinWindow(timeOfDay, BreadthActiveStart, BreadthActiveEnd))
+			{
+				breadthSkippedClosed++;
+
+				if (VerboseLogging)
+					Log(string.Format("Step 6 skipped: leaders closed at {0:000000}.", timeOfDay));
+			}
+			else if (breadth != null)
 			{
 				ConfirmationResult breadthResult = breadth.Evaluate(result.Direction, Time[0]);
 
@@ -1061,6 +1085,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return cleaned.ToArray();
 		}
 
+		/// <summary>
+		/// Inclusive HHmmss window, wrapping midnight when start is after end. Equal start
+		/// and end means always open.
+		/// </summary>
+		private static bool IsWithinWindow(int timeOfDay, int start, int end)
+		{
+			if (start == end)
+				return true;
+
+			if (start < end)
+				return timeOfDay >= start && timeOfDay <= end;
+
+			return timeOfDay >= start || timeOfDay <= end;
+		}
+
 		/// <summary>Adds minutes to an HHmmss integer without leaving the HHmmss form.</summary>
 		private static int AddMinutesToTime(int hhmmss, int minutes)
 		{
@@ -1126,6 +1165,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			stopTicksMax = 0;
 			stopTicksSum = 0;
 			longSetups = shortSetups = longEntries = shortEntries = 0;
+			breadthSkippedClosed = 0;
 		}
 
 		/// <summary>
@@ -1168,15 +1208,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			LogRiskConsistency();
 
-			// The VIX index and the leaders trade regular hours. Their readings are held
-			// between bars, so outside 09:30-16:00 they would confirm against a price from
-			// hours ago - the confirmations now refuse stale data rather than agreeing with
-			// it, which means these steps veto everything overnight instead of helping.
-			if (TradingHours == TradingHoursMode.ExtendedHours
-				&& (VixMode != ConfirmationMode.Off || BreadthMode != ConfirmationMode.Off))
+			if (TradingHours == TradingHoursMode.ExtendedHours && BreadthMode != ConfirmationMode.Off)
 			{
-				Print("  WARNING: extended hours with step 5 or 6 on. Both sources close at 16:00 ET and");
-				Print("           will refuse to confirm outside it, so overnight setups cannot be taken.");
+				Print(string.Format("  Step 6 applies {0:000000}-{1:000000} only; outside it the leaders are shut and it is skipped.",
+					BreadthActiveStart, BreadthActiveEnd));
+			}
+
+			// The ^VIX index is only disseminated around the cash session, so on a Globex
+			// chart it is absent for most of the night and its staleness guard would refuse
+			// every overnight setup. VX futures run close to 23 hours.
+			if (TradingHours == TradingHoursMode.ExtendedHours
+				&& VixMode != ConfirmationMode.Off
+				&& VixSymbol != null
+				&& VixSymbol.TrimStart().StartsWith("^"))
+			{
+				Print("  WARNING: extended hours with the ^VIX index. It is not published overnight, so");
+				Print("           step 5 will refuse every setup outside the cash session. Use VX ##-## instead.");
 			}
 
 			// NinjaTrader keeps the parameter values you configured on an instance, so a
@@ -1385,7 +1432,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			Print(string.Format("  Step 5 (VIX)         : {0}", totalRejectedVix));
-			Print(string.Format("  Step 6 (leaders)     : {0}", totalRejectedBreadth));
+			Print(string.Format("  Step 6 (leaders)     : {0}{1}", totalRejectedBreadth,
+				breadthSkippedClosed > 0 ? string.Format("   ({0} skipped, leaders closed)", breadthSkippedClosed) : string.Empty));
 			Print(string.Format("  Stop band            : {0}", totalRejectedStop));
 			Print(string.Format("  Sizing               : {0}", totalRejectedSizing));
 
@@ -1675,7 +1723,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public ConfirmationMode VixMode { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "VIX symbol", Description = "Must exist in your data feed. ^VIX on Kinetick.", GroupName = "7. Step 5 - VIX", Order = 1)]
+		[Display(Name = "VIX symbol", Description = "VX ##-## is the continuous VIX future, which trades nearly 23 hours and so works overnight. ^VIX is the index and is only published around the cash session. Must exist in your feed either way.", GroupName = "7. Step 5 - VIX", Order = 1)]
 		public string VixSymbol { get; set; }
 
 		[NinjaScriptProperty]
@@ -1720,6 +1768,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, 100)]
 		[Display(Name = "Min leader move (%)", Description = "Below this a leader counts as flat rather than participating.", GroupName = "8. Step 6 - Leaders", Order = 4)]
 		public double BreadthMinMovePercent { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 235959)]
+		[Display(Name = "Leaders open (HHmmss)", Description = "Step 6 applies only inside this window and is skipped outside it. The leaders trade 09:30-16:00 ET and there is no overnight ticker for them. Set start equal to end to apply the step around the clock.", GroupName = "8. Step 6 - Leaders", Order = 5)]
+		public int BreadthActiveStart { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 235959)]
+		[Display(Name = "Leaders close (HHmmss)", GroupName = "8. Step 6 - Leaders", Order = 6)]
+		public int BreadthActiveEnd { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Enable logging", GroupName = "9. Diagnostics", Order = 0)]

@@ -210,6 +210,17 @@ namespace Socrates.Market
 		/// keep voting on trades taken hours later.
 		/// </summary>
 		public double MaxDataAgeMinutes = 15;
+
+		/// <summary>
+		/// When every leader that has traded today has gone stale, treat the step as not
+		/// applicable rather than as disagreement. The equity market being shut is not
+		/// evidence against a trade.
+		///
+		/// This deliberately does not cover leaders that have never produced a bar at all.
+		/// That is a data problem - a bad symbol, a feed without equity coverage - and
+		/// skipping the step silently would hide it. Those still fail.
+		/// </summary>
+		public bool SkipWhenClosed = true;
 	}
 
 	/// <summary>
@@ -306,9 +317,15 @@ namespace Socrates.Market
 
 			if (available == 0)
 			{
+				// Stale means they traded and then stopped: the market closed. Never having
+				// had data means something is wrong with the symbols, and that must not pass.
+				if (stale > 0 && settings.SkipWhenClosed)
+					return ConfirmationResult.Pass(string.Format("Leaders closed ({0} stale) - step 6 not applicable.", stale));
+
 				result.Detail = stale > 0
-					? string.Format("All {0} leaders are stale - the equity market is closed, so they cannot confirm.", stale)
-					: "No leader data available for this bar.";
+					? string.Format("All {0} leaders are stale and skipping is off.", stale)
+					: "No leader data available - check that the symbols exist in your feed.";
+
 				return result;
 			}
 

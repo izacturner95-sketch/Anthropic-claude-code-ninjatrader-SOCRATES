@@ -84,7 +84,7 @@ The engine classes are plain C# with no NinjaTrader dependencies. Only
 | NQ intraday | Primary | always |
 | NQ daily, weekly | Prior period levels and pivots | always |
 | NQ 4-hour | 4-hour pivots | **Use 4-hour pivots** on |
-| `^VIX` | Step 5 | **VIX mode** not Off |
+| `VX ##-##` | Step 5 | **VIX mode** not Off |
 | AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA | Step 6 | **Breadth mode** not Off |
 
 **Steps 5 and 6 ship Off.** With both on the strategy loads twelve series, and every
@@ -97,11 +97,25 @@ have confirmed its symbols open on a chart.
 flat by 16:55. Regular is 09:45–15:45; Custom takes the three HHmmss times, and may wrap
 midnight.
 
-Because the VIX index and the equities trade regular hours only, running either
-confirmation on extended hours means neither can confirm overnight. Both refuse stale
-data rather than agreeing with a price from hours earlier, so overnight setups are
-vetoed rather than taken on bad evidence. Enabling step 5 or 6 effectively puts you back
-on a 09:30–16:00 ET strategy, and the banner says so at startup.
+The two confirmations handle the overnight session differently, because the data does.
+
+**Step 5 uses VIX futures**, `VX ##-##`, not the `^VIX` index. The index is only
+published around the cash session, so on a Globex chart it is dark for most of the night
+and could not confirm anything; VX trades close to 23 hours. It prices in contango
+rather than tracking spot exactly, which does not matter here — the step reads direction
+and levels, not the absolute number. Point **VIX symbol** back at `^VIX` if you want the
+index, and the banner will warn you when that is combined with extended hours.
+
+**Step 6 is skipped outside the leaders' session.** There is no overnight ticker for
+AAPL — it is AAPL in every session, and from 20:00 to 04:00 ET it is dark everywhere.
+So the step applies inside **Leaders open / close** (09:30–16:00 ET by default) and is
+skipped outside it, rather than failing every overnight setup for want of data it was
+never going to have. A shut equity market is not evidence against a trade. The run
+summary counts the skips.
+
+That skip is deliberately narrow: it triggers when leaders traded and then stopped, not
+when they never produced a bar at all. A symbol your feed does not carry still fails
+loudly instead of quietly disabling the step.
 
 The prior-day and prior-week levels need history: three weeks of loaded data before
 weekly pivots exist. Short loads are not fatal — the missing levels are skipped, a
