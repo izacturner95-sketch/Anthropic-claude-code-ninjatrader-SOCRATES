@@ -47,7 +47,13 @@ usually quick to resolve.
 - **Session template:** matching the spec (RTH vs 24-hour changes results a lot)
 - **Commission:** set a realistic per-round-turn cost. Not optional — a strategy
   that is profitable only at zero commission is not profitable.
-- **Slippage:** at least 1 tick. NQ is liquid but market orders still pay the spread.
+- **Slippage** is set in the strategy, not here: 1 tick by default.
+
+> **1-minute data required.** Fills resolve against 1-minute bars rather than the
+> chart's, because every trade carries a stop and a target at once and any 5-minute bar
+> touching both leaves the backtest to assume which came first — generously. If the
+> range has no 1-minute history, NinjaTrader will say so; download it rather than
+> dropping `Order fill resolution` back to Standard, which only hides the problem.
 
 Then **Run**.
 

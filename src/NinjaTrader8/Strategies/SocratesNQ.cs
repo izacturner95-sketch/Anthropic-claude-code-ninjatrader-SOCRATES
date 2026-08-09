@@ -48,6 +48,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int idxFourHour = -1;
 		private int idxVix = -1;
 		private int idxBreadthStart = -1;
+		private int expectedSeriesCount;
 		private string[] breadthSymbols = new string[0];
 		private double[] breadthSessionOpen = new double[0];
 
@@ -167,8 +168,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 				ExitOnSessionCloseSeconds = 30;
 				IsFillLimitOnTouch = false;
 				MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
-				OrderFillResolution = OrderFillResolution.Standard;
-				Slippage = 0;
+
+				// Every trade carries a stop and a target at the same time, so any 5-minute
+				// bar that touches both leaves the backtest to assume which came first. That
+				// assumption is generous, and it is generous in exactly the way that makes a
+				// strategy like this look better than it is. Resolving fills against 1-minute
+				// data replaces most of the guess with data.
+				//
+				// It needs 1-minute history for the range. Without it NinjaTrader will say so
+				// rather than quietly carry on estimating.
+				OrderFillResolution = OrderFillResolution.High;
+				OrderFillResolutionType = BarsPeriodType.Minute;
+				OrderFillResolutionValue = 1;
+
+				// One tick. Entries are market orders on a bar close, so they pay something;
+				// zero was never a defensible figure, just an unexamined one.
+				Slippage = 1;
 				StartBehavior = StartBehavior.WaitUntilFlat;
 				TimeInForce = TimeInForce.Gtc;
 				TraceOrders = false;
@@ -452,7 +467,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 							next++;
 						}
 
-						breadthSessionOpen = new double[breadthSymbols.Length];
+							breadthSessionOpen = new double[breadthSymbols.Length];
 
 						breadth = new BreadthConfirmation(new BreadthConfirmationSettings
 						{
@@ -464,6 +479,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 						}, breadthSymbols);
 					}
 				}
+
+				// Every index above is a running count of AddDataSeries calls, so anything that
+				// adds a series NinjaTrader also exposes would shift them all and silently
+				// point the daily, weekly and VIX lookups at the wrong data. Recorded here and
+				// checked once the series have loaded.
+				expectedSeriesCount = next;
 
 				processedTradeCount = 0;
 				flattenedForDay = false;
@@ -1271,6 +1292,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Stop            : {0}", DescribeStop()));
 			Print(string.Format("  Step 5 (VIX)    : {0}{1}", VixMode, VixMode == ConfirmationMode.Off ? string.Empty : " on " + VixSymbol));
 			Print(string.Format("  Step 6 (leaders): {0}{1}", BreadthMode, BreadthMode == ConfirmationMode.Off ? string.Empty : " on " + BreadthSymbols));
+			Print(string.Format("  Fills           : {0} resolution ({1}-{2}), slippage {3} tick(s)",
+				OrderFillResolution, OrderFillResolutionValue, OrderFillResolutionType, Slippage));
 			Print(string.Format("  Data series     : {0}", BarsArray != null ? BarsArray.Length : 0));
 
 			if (BarsArray != null)
@@ -1288,6 +1311,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				if (idxWeekly >= 0 && BarsArray[idxWeekly] != null && BarsArray[idxWeekly].Count < 2)
 					Print("  NOTE: fewer than two weekly bars. Prior-week levels and weekly pivots will be skipped.");
+
+				// If this ever trips, every reference below index 0 is reading the wrong
+				// series and nothing downstream can be trusted. Loud, because the symptom
+				// otherwise is levels that look plausible and are simply wrong.
+				if (BarsArray.Length != expectedSeriesCount)
+				{
+					Print(string.Format("  WARNING: expected {0} series, got {1}. The indices this strategy uses are",
+						expectedSeriesCount, BarsArray.Length));
+					Print("           positional, so daily, weekly and VIX lookups are now pointing at the wrong");
+					Print("           data. Do not trust this run. Report it with the series list above.");
+				}
 			}
 
 			LogRiskConsistency();
