@@ -158,7 +158,8 @@ session windows and connection loss are all checked in one place.
 behaviour agree. Intraday tick evaluation is available but is a deliberate choice
 with real backtest-fidelity costs, not a default.
 
-**Fills resolve against 1-minute data**, not the chart's bars, and slippage is 1 tick.
+**Entries are submitted on a 1-minute series**, so their fills resolve on smaller bars
+than the chart's, and slippage is 1 tick.
 Every trade carries a stop and a target simultaneously, so a bar touching both leaves
 the backtest to assume a sequence — and the assumption flatters precisely this kind of
 strategy. Needs 1-minute history for the tested range.

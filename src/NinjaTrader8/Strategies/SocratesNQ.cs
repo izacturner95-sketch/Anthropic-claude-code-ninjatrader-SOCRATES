@@ -48,6 +48,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int idxFourHour = -1;
 		private int idxVix = -1;
 		private int idxBreadthStart = -1;
+		private int idxFill = -1;
 		private int expectedSeriesCount;
 		private string[] breadthSymbols = new string[0];
 		private double[] breadthSessionOpen = new double[0];
@@ -169,21 +170,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 				IsFillLimitOnTouch = false;
 				MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
 
-				// Every trade carries a stop and a target at the same time, so any 5-minute
-				// bar that touches both leaves the backtest to assume which came first. That
-				// assumption is generous, and it is generous in exactly the way that makes a
-				// strategy like this look better than it is. Resolving fills against 1-minute
-				// data replaces most of the guess with data.
-				//
-				// It needs 1-minute history for the range. Without it NinjaTrader will say so
-				// rather than quietly carry on estimating.
-				OrderFillResolution = OrderFillResolution.High;
-				OrderFillResolutionType = BarsPeriodType.Minute;
-				OrderFillResolutionValue = 1;
+				// Has to stay Standard: High resolution is only available to single-series
+				// strategies, and this one loads four at a minimum. NinjaTrader's own advice
+				// when it refuses is to program the finer resolution in yourself, which is
+				// what 'Fill resolution (minutes)' below does - a 1-minute series of the same
+				// instrument, with entries submitted against it so their fills, and the stop
+				// and target attached to them, resolve on 1-minute bars instead of 5.
+				OrderFillResolution = OrderFillResolution.Standard;
 
 				// One tick. Entries are market orders on a bar close, so they pay something;
 				// zero was never a defensible figure, just an unexamined one.
 				Slippage = 1;
+
+				// Every trade carries a stop and a target at once, so any 5-minute bar
+				// touching both leaves the backtest to assume which came first - generously,
+				// and in exactly the way that flatters a strategy with a structural stop and
+				// a distant structural target. 0 disables the extra series and accepts
+				// whatever the primary bar size implies.
+				FillResolutionMinutes = 1;
 				StartBehavior = StartBehavior.WaitUntilFlat;
 				TimeInForce = TimeInForce.Gtc;
 				TraceOrders = false;
@@ -402,13 +406,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				// Series are added only when the step that needs them is enabled, so a data
 				// feed without index or equity coverage can still run steps 1-4.
-				idxDaily = idxWeekly = idxFourHour = idxVix = idxBreadthStart = -1;
+				idxFill = idxDaily = idxWeekly = idxFourHour = idxVix = idxBreadthStart = -1;
 				breadthSymbols = new string[0];
 				breadthSessionOpen = new double[0];
 				vix = null;
 				breadth = null;
 
 				int next = 1;
+
+				// Added first so its index is stable regardless of what else is switched on.
+				// Same instrument as the primary, just finer: it carries no signal logic and
+				// exists only so orders submitted against it fill on smaller bars.
+				if (FillResolutionMinutes > 0)
+				{
+					AddDataSeries(BarsPeriodType.Minute, FillResolutionMinutes);
+					idxFill = next++;
+				}
 
 				AddDataSeries(BarsPeriodType.Day, 1);
 				idxDaily = next++;
@@ -526,7 +539,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
-			// Secondary series that only supply reference prices need no per-bar work.
+			// Secondary series that only supply reference prices need no per-bar work, and
+			// the fill series carries no logic at all - it exists purely so orders fill on
+			// smaller bars.
 			if (BarsInProgress != 0)
 				return;
 
@@ -1087,10 +1102,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (targetPrice > 0)
 				SetProfitTarget(label, CalculationMode.Price, targetPrice);
 
-			if (bullish)
+			// Submitted against the fine series when there is one, so the fill - and the stop
+			// and target attached to this entry - resolve on its bars rather than the
+			// primary's. Same instrument, so it is the same position either way.
+			if (idxFill >= 0)
+			{
+				if (bullish)
+					EnterLong(idxFill, contracts, label);
+				else
+					EnterShort(idxFill, contracts, label);
+			}
+			else if (bullish)
+			{
 				EnterLong(contracts, label);
+			}
 			else
+			{
 				EnterShort(contracts, label);
+			}
 
 			risk.RecordEntry();
 			dayEntries++;
@@ -1292,8 +1321,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Stop            : {0}", DescribeStop()));
 			Print(string.Format("  Step 5 (VIX)    : {0}{1}", VixMode, VixMode == ConfirmationMode.Off ? string.Empty : " on " + VixSymbol));
 			Print(string.Format("  Step 6 (leaders): {0}{1}", BreadthMode, BreadthMode == ConfirmationMode.Off ? string.Empty : " on " + BreadthSymbols));
-			Print(string.Format("  Fills           : {0} resolution ({1}-{2}), slippage {3} tick(s)",
-				OrderFillResolution, OrderFillResolutionValue, OrderFillResolutionType, Slippage));
+			Print(string.Format("  Fills           : {0}, slippage {1} tick(s)",
+				FillResolutionMinutes > 0
+					? string.Format("orders submitted on a {0}-minute series", FillResolutionMinutes)
+					: "orders on the primary series - intrabar sequence is assumed",
+				Slippage));
 			Print(string.Format("  Data series     : {0}", BarsArray != null ? BarsArray.Length : 0));
 
 			if (BarsArray != null)
@@ -1469,6 +1501,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			if (index == 0)
 				return "NQ primary";
+
+			if (index == idxFill)
+				return "NQ fill resolution";
 
 			if (index == idxDaily)
 				return "NQ daily";
@@ -1842,6 +1877,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[NinjaScriptProperty]
 		[Display(Name = "Scale size by confirmation strength", Description = "Reduce size when the VIX or leaders agree only weakly. Only bites when Fixed contracts is above 1.", GroupName = "1. Position Sizing", Order = 4)]
 		public bool UseConfidenceSizing { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 60)]
+		[Display(Name = "Fill resolution (minutes)", Description = "Entries are submitted against a series this fine, so their fills and their stop and target resolve on smaller bars than the chart's. NinjaTrader's own High resolution setting cannot be used here - it is single-series only. 0 disables it and accepts the primary bar size. Needs history at this period.", GroupName = "9. Diagnostics", Order = 3)]
+		public int FillResolutionMinutes { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Trading hours", Description = "Regular = 09:45-15:45 ET. Extended = 18:00-16:45 ET, the full Globex session. Custom uses the three times below; they are ignored otherwise.", GroupName = "2. Risk", Order = 0)]

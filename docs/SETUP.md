@@ -49,11 +49,17 @@ usually quick to resolve.
   that is profitable only at zero commission is not profitable.
 - **Slippage** is set in the strategy, not here: 1 tick by default.
 
-> **1-minute data required.** Fills resolve against 1-minute bars rather than the
-> chart's, because every trade carries a stop and a target at once and any 5-minute bar
-> touching both leaves the backtest to assume which came first — generously. If the
-> range has no 1-minute history, NinjaTrader will say so; download it rather than
-> dropping `Order fill resolution` back to Standard, which only hides the problem.
+> **1-minute data required.** Entries are submitted against a 1-minute series so their
+> fills, and the stop and target attached to them, resolve on smaller bars than the
+> chart's — every trade carries a stop and a target at once, and any 5-minute bar
+> touching both otherwise leaves the backtest to assume which came first, generously.
+>
+> NinjaTrader's own `High` order fill resolution cannot do this: it is single-series
+> only, and this strategy always loads several. Its error message tells you to program
+> the finer resolution in yourself, which is what **Fill resolution (minutes)** is.
+>
+> If the range has no 1-minute history, download it rather than setting the parameter to
+> 0 — that only hides the question.
 
 Then **Run**.
 
