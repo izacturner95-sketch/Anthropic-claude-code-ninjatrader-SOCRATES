@@ -133,6 +133,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int vixBarsSeen;
 		private int vixUpdatesApplied;
 
+		// Results. The funnel answers "why no trades"; none of it answers "are the trades
+		// any good", and with both exits read off structure the R multiple actually realised
+		// is the number that says whether the geometry works.
+		private readonly List<double> pendingRiskDollars = new List<double>();
+		private int tradesWon;
+		private int tradesLost;
+		private int tradesScratch;
+		private double grossProfit;
+		private double grossLoss;
+		private double runningEquity;
+		private double equityPeak;
+		private double maxDrawdown;
+		private int rSamples;
+		private double rSum;
+		private double rMin = double.MaxValue;
+		private double rMax = double.MinValue;
+
 		protected override void OnStateChange()
 		{
 			if (State == State.SetDefaults)
@@ -1028,6 +1045,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			dayEntries++;
 			totalEntries++;
 
+			// Queued so the realised result can be divided by the risk that was actually
+			// taken. One position at a time and one entry per direction, so pairing the
+			// oldest unmatched entry with the next closed trade holds.
+			pendingRiskDollars.Add(stopDistanceTicks * TickValueDollars * contracts);
+
 			if (bullish)
 				longEntries++;
 			else
@@ -1056,6 +1078,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				processedTradeCount++;
 
 				risk.RecordClosedTrade(trade.ProfitCurrency);
+				RecordTradeResult(trade.ProfitCurrency);
 
 				Log(string.Format("Trade closed: {0:C}. Day P/L {1:C}, trades {2}, consecutive losses {3}.",
 					trade.ProfitCurrency, risk.DailyRealisedPnL, risk.TradesToday, risk.ConsecutiveLosses));
@@ -1186,6 +1209,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 			breadthSkippedClosed = 0;
 			vixBarsSeen = 0;
 			vixUpdatesApplied = 0;
+
+			pendingRiskDollars.Clear();
+			tradesWon = tradesLost = tradesScratch = 0;
+			grossProfit = grossLoss = 0;
+			runningEquity = equityPeak = maxDrawdown = 0;
+			rSamples = 0;
+			rSum = 0;
+			rMin = double.MaxValue;
+			rMax = double.MinValue;
 		}
 
 		/// <summary>
@@ -1375,6 +1407,93 @@ namespace NinjaTrader.NinjaScript.Strategies
 				string.IsNullOrEmpty(haltReason) ? string.Empty : ", halted: " + haltReason));
 		}
 
+		private void RecordTradeResult(double profitDollars)
+		{
+			runningEquity += profitDollars;
+
+			if (runningEquity > equityPeak)
+				equityPeak = runningEquity;
+
+			double drawdown = equityPeak - runningEquity;
+
+			if (drawdown > maxDrawdown)
+				maxDrawdown = drawdown;
+
+			if (profitDollars > 0)
+			{
+				tradesWon++;
+				grossProfit += profitDollars;
+			}
+			else if (profitDollars < 0)
+			{
+				tradesLost++;
+				grossLoss += -profitDollars;
+			}
+			else
+			{
+				tradesScratch++;
+			}
+
+			if (pendingRiskDollars.Count == 0)
+				return;
+
+			double riskDollars = pendingRiskDollars[0];
+			pendingRiskDollars.RemoveAt(0);
+
+			if (riskDollars <= 0)
+				return;
+
+			double r = profitDollars / riskDollars;
+			rSamples++;
+			rSum += r;
+
+			if (r < rMin)
+				rMin = r;
+
+			if (r > rMax)
+				rMax = r;
+		}
+
+		/// <summary>
+		/// What the trades actually did. Kept alongside NinjaTrader's own performance report
+		/// because the R multiple is the number this strategy is steered by - both exits come
+		/// from structure, so the ratio each trade offered is the thing being tested.
+		/// </summary>
+		private void LogPerformance()
+		{
+			int closed = tradesWon + tradesLost + tradesScratch;
+
+			if (closed == 0)
+			{
+				if (totalEntries > 0)
+					Print(string.Format("  {0} entries submitted, none closed within the run.", totalEntries));
+
+				return;
+			}
+
+			Print("  --- results ---");
+			Print(string.Format("  Trades closed        : {0}  ({1} won, {2} lost{3})", closed, tradesWon, tradesLost,
+				tradesScratch > 0 ? string.Format(", {0} scratch", tradesScratch) : string.Empty));
+			Print(string.Format("  Win rate             : {0:N0}%", (tradesWon * 100.0) / closed));
+			Print(string.Format("  Net                  : {0:C}   (gross +{1:C} / -{2:C})",
+				grossProfit - grossLoss, grossProfit, grossLoss));
+			Print(string.Format("  Profit factor        : {0}", grossLoss > 0 ? string.Format("{0:N2}", grossProfit / grossLoss) : "n/a, no losses"));
+			Print(string.Format("  Largest drawdown     : {0:C}  against a {1:C} daily cap", maxDrawdown, MaxDailyLossDollars));
+
+			if (rSamples > 0)
+			{
+				Print(string.Format("  R multiple           : mean {0:+0.00;-0.00}, best {1:+0.00;-0.00}, worst {2:+0.00;-0.00}, over {3} trades",
+					rSum / rSamples, rMax, rMin, rSamples));
+
+				// Expectancy is the only figure here that survives a change of position size,
+				// so it is the one to judge the geometry by.
+				if (rSum / rSamples <= 0)
+					Print("  NOTE: negative expectancy. The sequence is finding setups; they are not paying.");
+			}
+
+			Print("  These are backtest fills. Model commission and slippage before believing any of it.");
+		}
+
 		private void RecordStopDistance(double stopTicks)
 		{
 			if (stopTicks <= 0 || double.IsNaN(stopTicks) || double.IsInfinity(stopTicks))
@@ -1470,13 +1589,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				if (vix.MoveSamples > 0)
 				{
-					Print(string.Format("      |move| over {0} bars: min {1:N2}, mean {2:N2}, max {3:N2}, against a {4:N2} threshold",
-						VixLookbackBars, vix.MoveAbsMin, vix.MoveAbsMean, vix.MoveAbsMax, vix.LastThreshold));
+					Print(string.Format("      |move| over {0} bars: min {1:N2}, mean {2:N2}, max {3:N2}",
+						VixLookbackBars, vix.MoveAbsMin, vix.MoveAbsMean, vix.MoveAbsMax));
+					Print(string.Format("      threshold in force : min {0:N2}, mean {1:N2}, max {2:N2}",
+						vix.ThresholdMin, vix.ThresholdMean, vix.ThresholdMax));
 
 					// A threshold above everything the source ever did is not a filter, it is
 					// an off switch, and it should not take a backtest to notice.
-					if (vix.MoveAbsMax < vix.LastThreshold)
+					if (vix.MoveAbsMax < vix.ThresholdMin)
 						Print("      NOTE: the threshold is above every move measured. Lower 'VIX min move (ATR)'.");
+
+					// The reverse failure, and the easier one to miss: a gate that lets
+					// everything through still looks like a working confirmation.
+					if (vix.ThresholdMax <= VixMinDirectionalMove)
+						Print(string.Format("      NOTE: the ATR term never bound - the {0:N2} floor was the whole test. The VIX's own ATR is smaller than expected.",
+							VixMinDirectionalMove));
 				}
 				else if (vix.RejectedNoData > 0)
 				{
@@ -1510,6 +1637,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Sizing               : {0}", totalRejectedSizing));
 
 			LogStopDistribution();
+			LogPerformance();
 
 			if (totalSweeps == 0)
 				Print("  No sweeps at all. Loosen 'Min penetration' or check that levels are being built.");

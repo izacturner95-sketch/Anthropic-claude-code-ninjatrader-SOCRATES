@@ -118,7 +118,13 @@ namespace Socrates.Market
 		private double moveAbsMin = double.MaxValue;
 		private double moveAbsMax;
 		private double moveAbsSum;
-		private double lastThreshold;
+
+		// The threshold varies bar to bar once it is scaled to ATR, so reporting only the
+		// last one says nothing about the run. Its spread against the move spread is what
+		// shows whether the gate is filtering or just waved through.
+		private double thresholdMin = double.MaxValue;
+		private double thresholdMax;
+		private double thresholdSum;
 
 		public VixConfirmation(VixConfirmationSettings settings, MarketAnalyzer analyzer)
 		{
@@ -162,8 +168,9 @@ namespace Socrates.Market
 		public double MoveAbsMax { get { return moveAbsMax; } }
 		public double MoveAbsMean { get { return moveSamples > 0 ? moveAbsSum / moveSamples : 0; } }
 
-		/// <summary>The threshold in force at the last measured evaluation, after ATR scaling.</summary>
-		public double LastThreshold { get { return lastThreshold; } }
+		public double ThresholdMin { get { return moveSamples > 0 ? thresholdMin : 0; } }
+		public double ThresholdMax { get { return thresholdMax; } }
+		public double ThresholdMean { get { return moveSamples > 0 ? thresholdSum / moveSamples : 0; } }
 
 		/// <summary>
 		/// The VIX moves inversely to the Nasdaq, so a long NQ trade wants the VIX falling
@@ -198,16 +205,22 @@ namespace Socrates.Market
 			// hardly moves, and a threshold set for the cash session refuses everything.
 			double threshold = Math.Max(settings.MinDirectionalMove, lastAtr * settings.MinDirectionalMoveAtr);
 
-			lastThreshold = threshold;
 			moveSamples++;
 			double moveAbs = Math.Abs(move);
 			moveAbsSum += moveAbs;
+			thresholdSum += threshold;
 
 			if (moveAbs < moveAbsMin)
 				moveAbsMin = moveAbs;
 
 			if (moveAbs > moveAbsMax)
 				moveAbsMax = moveAbs;
+
+			if (threshold < thresholdMin)
+				thresholdMin = threshold;
+
+			if (threshold > thresholdMax)
+				thresholdMax = threshold;
 
 			bool directionAgrees = direction == TradeDirection.Long
 				? move <= -threshold

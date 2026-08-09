@@ -131,6 +131,11 @@ state and needs to be explainable. The strategy prints:
 - a **heartbeat** every `Status every N bars` bars: bar count, ATR, level count, setup state
 - a **daily funnel** at each session roll: sweeps → structure shifts → retests → entries, plus what was rejected and by which gate
 - a **run summary** when it stops, with a pointer to the first step that produced nothing
+- a **results block**: win rate, net, profit factor, drawdown, and the realised R multiple
+
+The R multiple is the one to judge by. Both exits come from structure, so the ratio each
+trade offered is the thing under test, and expectancy in R is the only figure that
+survives a change of position size.
 
 `docs/SETUP.md` sections 6 and 7 work through an empty Output window and a run with
 output but no trades.
