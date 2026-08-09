@@ -64,8 +64,9 @@ The first thing printed is a banner listing every data series with its bar count
   Instrument      : NQ 12-25
   Calculate       : OnBarClose, bars required 30
   Entry window    : 094500-154500, flatten 155500
-  Sizing          : Fixed, max 1 contract(s), daily loss cap $1,000.00
-  Stop band       : 20-100 ticks
+  Sizing          : 1 contract(s), max 1, daily loss cap $1,000.00
+  Stop            : fixed 60 ticks (15.00 pts, $300.00 per contract)
+  Worst run       : 60 ticks x $5.00 x 1 contract(s) x 2 losses = $600.00, inside the $1,000.00 cap.
   Step 5 (VIX)    : Off
   Step 6 (leaders): Off
   Data series     : 4
@@ -122,34 +123,43 @@ a number.
 invalidated before completing. `Setups completed` is the number that produced a
 tradeable signal, and it is that number the rejection counts below it add up to.
 
-### Choosing the stop band
+### Choosing the stop
 
-The summary prints the stop distance every completed setup asked for:
+**Stop loss (ticks)** sets the stop a fixed distance from entry, and that distance is
+the risk per trade: ticks × tick value × contracts, known before the order goes out.
+At the default 60 ticks on NQ that is 15 points, $300 a contract.
 
-```
-  --- stop distance asked for by 45 completed setups (ticks) ---
-  Min 84, mean 173, max 391. Band admits 20-200.
-     75-99      3  (  7% at or below)
-    100-124     6  ( 20% at or below)
-    ...
-```
-
-Entry is at the broken structure level and the stop sits beyond the swept extreme, so
-the distance between them is the whole displacement leg — much wider than a stop
-placed off the entry bar. Read `Max stop (ticks)` off the histogram rather than
-picking a round number.
-
-Then check the startup banner. It multiplies the band out against the daily loss
-limit and warns when they contradict each other:
+The startup banner multiplies it out against the daily loss limit:
 
 ```
-  WARNING: 200 ticks x $5.00 x 1 contract(s) x 2 losses = $2,000.00,
-           which overshoots the $1,000.00 daily cap.
+  Worst run       : 60 ticks x $5.00 x 1 contract(s) x 2 losses = $600.00,
+                    inside the $1,000.00 cap.
 ```
 
-That is a real conflict, not a formatting nag: a cap two stop-outs cannot reach never
-fires. Raise the cap, drop to MNQ (**Tick value** 0.50, where the same 50-point stop
-costs $100 instead of $1,000), or accept fewer trades with a tighter band.
+If it overshoots, that is a real conflict rather than a formatting nag — a cap two
+stop-outs cannot reach never fires. Raise the cap, drop to MNQ (**Tick value** 0.50),
+or tighten the stop.
+
+Setting it to **0** goes back to the structure stop: beyond the swept extreme plus a
+buffer, sized by whatever the setup happened to be, and gated by the **Min / Max stop
+(ticks)** band. That is what the strategy was originally built around, and it is the
+more faithful reading of "the stop belongs beyond the liquidity that was swept" — but
+the distance is then out of your hands.
+
+Either way, the summary reports what the structure implied, so you can see how a fixed
+stop compares:
+
+```
+  --- stop distance the structure implied, 45 completed setups (ticks) ---
+  Min 84, mean 173, max 391. Using fixed 60 ticks (15.00 pts, $300.00 per contract).
+  0 of 45 setups had structure inside the 60 tick stop (0%).
+  NOTE: most stops sit inside the swept extreme. Expect stop-outs on the retest itself.
+```
+
+That note matters. A fixed stop tighter than the structure sits **between** entry and
+the swept extreme — so price coming back to test that extreme, which is exactly what
+the setup expects it to do, takes the trade out first. A high stop-out rate with a
+tight fixed stop is that, not a broken signal.
 
 **Min displacement (ATR)**, default 1.0, is the other setting that thins the funnel
 hard — requiring the structure-breaking bar to span a full ATR is demanding on a

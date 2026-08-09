@@ -144,15 +144,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StopTargetHandling = StopTargetHandling.PerEntryExecution;
 
 				// --- Sizing ---
-				SizingMode = PositionSizingMode.Fixed;
 				FixedContracts = 1;
-				RiskPerTradeDollars = 200;
-				RiskPerTradePercent = 0.5;
 				MaxContracts = 1;
-				AllowMinimumOneContract = false;
 				TickValueDollars = 5.00;
-				BacktestStartingEquity = 25000;
 				UseConfidenceSizing = false;
+
+				// The stop is placed this far from entry, and that fixes the risk: 60 ticks
+				// is 15 points, $300 on one NQ contract. Two of those is $600, inside the
+				// $1,000 daily cap, so the limits agree.
+				//
+				// Set to 0 to go back to the structure stop - beyond the swept extreme plus
+				// a buffer - which is what the strategy was originally built around. The run
+				// summary prints what that stop would have measured either way, so you can
+				// see whether a fixed 60 ticks sits inside or outside where structure is.
+				StopLossTicks = 60;
 
 				// --- Risk ---
 				SessionStartTime = 94500;
@@ -255,12 +260,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				sizerSettings = new PositionSizerSettings
 				{
-					Mode = SizingMode,
 					FixedContracts = FixedContracts,
-					RiskPerTradeDollars = RiskPerTradeDollars,
-					RiskPerTradePercent = RiskPerTradePercent,
-					MaxContracts = MaxContracts,
-					AllowMinimumOneContract = AllowMinimumOneContract
+					MaxContracts = MaxContracts
 				};
 
 				riskSettings = new RiskManagerSettings
@@ -403,8 +404,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			else if (State == State.Realtime)
 			{
-				Log(string.Format("Realtime. Sizing={0} max {1}, daily loss cap {2:C}, VIX={3}, breadth={4}.",
-					SizingMode, MaxContracts, MaxDailyLossDollars, VixMode, BreadthMode));
+				Log(string.Format("Realtime. {0} contract(s) max {1}, stop {2}, daily loss cap {3:C}, VIX={4}, breadth={5}.",
+					FixedContracts, MaxContracts, DescribeStop(), MaxDailyLossDollars, VixMode, BreadthMode));
 			}
 			else if (State == State.Terminated)
 			{
@@ -903,29 +904,56 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private void SubmitEntry(SetupResult result, double confirmationStrength)
 		{
+			bool bullish = result.Direction == TradeDirection.Long;
 			double entryPrice = Close[0];
-			double stopDistanceTicks = Math.Abs(entryPrice - result.StopPrice) / TickSize;
 
-			if (stopDistanceTicks < MinStopTicks)
+			double stopPrice = result.StopPrice;
+			double targetPrice = result.TargetPrice;
+			double structureStopTicks = Math.Abs(entryPrice - result.StopPrice) / TickSize;
+			double stopDistanceTicks = structureStopTicks;
+
+			if (StopLossTicks > 0)
 			{
-				dayRejectedStop++;
-				totalRejectedStop++;
-				Log(string.Format("Entry skipped: stop {0:N0} ticks is below the {1} tick minimum. {2}",
-					stopDistanceTicks, MinStopTicks, result.Detail));
-				return;
+				// A fixed stop replaces the structure stop, so the target has to be rebuilt
+				// from it too - the R multiple was measured against a distance that no longer
+				// applies. A target set from the opposing liquidity level (R multiple 0) is
+				// an absolute price and stands as it is.
+				double stopDistance = StopLossTicks * TickSize;
+				stopPrice = bullish ? entryPrice - stopDistance : entryPrice + stopDistance;
+				stopDistanceTicks = StopLossTicks;
+
+				if (TargetRMultiple > 0)
+				{
+					targetPrice = bullish
+						? entryPrice + (stopDistance * TargetRMultiple)
+						: entryPrice - (stopDistance * TargetRMultiple);
+				}
 			}
-
-			if (stopDistanceTicks > MaxStopTicks)
+			else
 			{
-				dayRejectedStop++;
-				totalRejectedStop++;
-				Log(string.Format("Entry skipped: stop {0:N0} ticks exceeds the {1} tick maximum. {2}",
-					stopDistanceTicks, MaxStopTicks, result.Detail));
-				return;
+				// The band only means anything when the stop comes from the structure. With a
+				// fixed stop every trade measures the same and the test is a no-op.
+				if (stopDistanceTicks < MinStopTicks)
+				{
+					dayRejectedStop++;
+					totalRejectedStop++;
+					Log(string.Format("Entry skipped: stop {0:N0} ticks is below the {1} tick minimum. {2}",
+						stopDistanceTicks, MinStopTicks, result.Detail));
+					return;
+				}
+
+				if (stopDistanceTicks > MaxStopTicks)
+				{
+					dayRejectedStop++;
+					totalRejectedStop++;
+					Log(string.Format("Entry skipped: stop {0:N0} ticks exceeds the {1} tick maximum. {2}",
+						stopDistanceTicks, MaxStopTicks, result.Detail));
+					return;
+				}
 			}
 
 			string sizingReason;
-			int contracts = sizer.GetContracts(sizerSettings, stopDistanceTicks, GetAccountEquity(), out sizingReason);
+			int contracts = sizer.GetContracts(sizerSettings, stopDistanceTicks, out sizingReason);
 
 			if (contracts > 0 && UseConfidenceSizing && confirmationStrength < 1.0)
 			{
@@ -944,12 +972,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			string label = result.Label;
 
-			SetStopLoss(label, CalculationMode.Price, result.StopPrice, false);
+			SetStopLoss(label, CalculationMode.Price, stopPrice, false);
 
-			if (result.TargetPrice > 0)
-				SetProfitTarget(label, CalculationMode.Price, result.TargetPrice);
+			if (targetPrice > 0)
+				SetProfitTarget(label, CalculationMode.Price, targetPrice);
 
-			if (result.Direction == TradeDirection.Long)
+			if (bullish)
 				EnterLong(contracts, label);
 			else
 				EnterShort(contracts, label);
@@ -958,8 +986,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 			dayEntries++;
 			totalEntries++;
 
-			Log(string.Format("ENTRY {0} x{1} @ ~{2:N2}. {3} {4}",
-				result.Direction, contracts, entryPrice, result.Detail, sizingReason));
+			Log(string.Format("ENTRY {0} x{1} @ ~{2:N2}, stop {3:N2}, target {4:N2}. {5} {6}",
+				result.Direction, contracts, entryPrice, stopPrice, targetPrice, result.Detail, sizingReason));
+
+			if (StopLossTicks > 0 && structureStopTicks > StopLossTicks)
+			{
+				Log(string.Format(
+					"  Fixed stop is {0:N0} ticks inside where structure put it ({1:N0}). The swept extreme is not protected.",
+					structureStopTicks - StopLossTicks, structureStopTicks));
+			}
 		}
 
 		private void CloseCurrentPosition()
@@ -990,14 +1025,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 				Log("Risk halt with open position - closing. " + risk.HaltReason);
 				CloseCurrentPosition();
 			}
-		}
-
-		private double GetAccountEquity()
-		{
-			if (State == State.Realtime && Account != null)
-				return Account.Get(AccountItem.CashValue, Currency.UsDollar);
-
-			return BacktestStartingEquity + SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
 		}
 
 		protected override void OnConnectionStatusUpdate(ConnectionStatusEventArgs e)
@@ -1116,8 +1143,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Instrument      : {0}", Instrument != null ? Instrument.FullName : "unknown"));
 			Print(string.Format("  Calculate       : {0}, bars required {1}", Calculate, BarsRequiredToTrade));
 			Print(string.Format("  Entry window    : {0:000000}-{1:000000}, flatten {2:000000}", SessionStartTime, SessionEndTime, FlattenTime));
-			Print(string.Format("  Sizing          : {0}, max {1} contract(s), daily loss cap {2:C}", SizingMode, MaxContracts, MaxDailyLossDollars));
-			Print(string.Format("  Stop band       : {0}-{1} ticks", MinStopTicks, MaxStopTicks));
+			Print(string.Format("  Sizing          : {0} contract(s), max {1}, daily loss cap {2:C}", FixedContracts, MaxContracts, MaxDailyLossDollars));
+			Print(string.Format("  Stop            : {0}", DescribeStop()));
 			Print(string.Format("  Step 5 (VIX)    : {0}{1}", VixMode, VixMode == ConfirmationMode.Off ? string.Empty : " on " + VixSymbol));
 			Print(string.Format("  Step 6 (leaders): {0}{1}", BreadthMode, BreadthMode == ConfirmationMode.Off ? string.Empty : " on " + BreadthSymbols));
 			Print(string.Format("  Data series     : {0}", BarsArray != null ? BarsArray.Length : 0));
@@ -1155,18 +1182,32 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (MaxDailyLossDollars <= 0 || MaxConsecutiveLosses <= 0)
 				return;
 
-			double worstCase = MaxStopTicks * TickValueDollars * Math.Max(1, MaxContracts) * MaxConsecutiveLosses;
+			int worstStopTicks = StopLossTicks > 0 ? StopLossTicks : MaxStopTicks;
+			int contracts = Math.Max(1, MaxContracts);
+			double worstCase = worstStopTicks * TickValueDollars * contracts * MaxConsecutiveLosses;
 
 			if (worstCase <= MaxDailyLossDollars)
+			{
+				Print(string.Format("  Worst run       : {0} ticks x {1:C} x {2} contract(s) x {3} losses = {4:C}, inside the {5:C} cap.",
+					worstStopTicks, TickValueDollars, contracts, MaxConsecutiveLosses, worstCase, MaxDailyLossDollars));
 				return;
+			}
 
 			Print(string.Format(
 				"  WARNING: {0} ticks x {1:C} x {2} contract(s) x {3} losses = {4:C}, which overshoots the {5:C} daily cap.",
-				MaxStopTicks, TickValueDollars, Math.Max(1, MaxContracts), MaxConsecutiveLosses, worstCase, MaxDailyLossDollars));
+				worstStopTicks, TickValueDollars, contracts, MaxConsecutiveLosses, worstCase, MaxDailyLossDollars));
 			Print(string.Format(
-				"           Raise the cap to {0:C}, switch to MNQ (Tick value 0.50), or lower Max stop to {1} ticks.",
+				"           Raise the cap to {0:C}, switch to MNQ (Tick value 0.50), or lower the stop to {1} ticks.",
 				worstCase,
-				(int)Math.Floor(MaxDailyLossDollars / (TickValueDollars * Math.Max(1, MaxContracts) * MaxConsecutiveLosses))));
+				(int)Math.Floor(MaxDailyLossDollars / (TickValueDollars * contracts * MaxConsecutiveLosses))));
+		}
+
+		private string DescribeStop()
+		{
+			return StopLossTicks > 0
+				? string.Format("fixed {0} ticks ({1:N2} pts, {2:C} per contract)",
+					StopLossTicks, StopLossTicks * TickSize, StopLossTicks * TickValueDollars)
+				: string.Format("from structure, band {0}-{1} ticks", MinStopTicks, MaxStopTicks);
 		}
 
 		private string DescribeSeries(int index)
@@ -1289,9 +1330,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (stopSamples == 0)
 				return;
 
-			Print(string.Format("  --- stop distance asked for by {0} completed setups (ticks) ---", stopSamples));
-			Print(string.Format("  Min {0:N0}, mean {1:N0}, max {2:N0}. Band admits {3}-{4}.",
-				stopTicksMin, stopTicksSum / stopSamples, stopTicksMax, MinStopTicks, MaxStopTicks));
+			Print(string.Format("  --- stop distance the structure implied, {0} completed setups (ticks) ---", stopSamples));
+			Print(string.Format("  Min {0:N0}, mean {1:N0}, max {2:N0}. Using {3}.",
+				stopTicksMin, stopTicksSum / stopSamples, stopTicksMax, DescribeStop()));
 
 			int running = 0;
 
@@ -1308,6 +1349,28 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				Print(string.Format("    {0} {1,4}  ({2,3:N0}% at or below)", label, stopTickBuckets[i],
 					(running * 100.0) / stopSamples));
+			}
+
+			if (StopLossTicks > 0)
+			{
+				int inside = 0;
+
+				for (int i = 0; i < StopBucketCount; i++)
+				{
+					if ((i + 1) * StopBucketTicks <= StopLossTicks)
+						inside += stopTickBuckets[i];
+				}
+
+				// A fixed stop tighter than the structure means the swept extreme sits on the
+				// far side of it. Price returning to test that extreme - which is the thing
+				// the setup expects it to do - takes the trade out first.
+				Print(string.Format("  {0} of {1} setups had structure inside the {2} tick stop ({3:N0}%).",
+					inside, stopSamples, StopLossTicks, (inside * 100.0) / stopSamples));
+
+				if (inside * 2 < stopSamples)
+					Print("  NOTE: most stops sit inside the swept extreme. Expect stop-outs on the retest itself.");
+
+				return;
 			}
 
 			int wouldPass = 0;
@@ -1335,45 +1398,27 @@ namespace NinjaTrader.NinjaScript.Strategies
 		#region Properties
 
 		[NinjaScriptProperty]
-		[Display(Name = "Sizing mode", GroupName = "1. Position Sizing", Order = 0)]
-		public PositionSizingMode SizingMode { get; set; }
-
-		[NinjaScriptProperty]
 		[Range(0, int.MaxValue)]
-		[Display(Name = "Fixed contracts", GroupName = "1. Position Sizing", Order = 1)]
+		[Display(Name = "Fixed contracts", GroupName = "1. Position Sizing", Order = 0)]
 		public int FixedContracts { get; set; }
 
 		[NinjaScriptProperty]
-		[Range(0, double.MaxValue)]
-		[Display(Name = "Risk per trade ($)", GroupName = "1. Position Sizing", Order = 2)]
-		public double RiskPerTradeDollars { get; set; }
-
-		[NinjaScriptProperty]
-		[Range(0, 100)]
-		[Display(Name = "Risk per trade (%)", GroupName = "1. Position Sizing", Order = 3)]
-		public double RiskPerTradePercent { get; set; }
+		[Range(0, 2000)]
+		[Display(Name = "Stop loss (ticks)", Description = "Distance from entry to the protective stop. This is the risk per trade: ticks x tick value x contracts. 0 uses the structure stop instead - beyond the swept extreme - and re-enables the min/max stop band.", GroupName = "1. Position Sizing", Order = 1)]
+		public int StopLossTicks { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, int.MaxValue)]
-		[Display(Name = "Max contracts", Description = "Hard ceiling applied to every sizing mode.", GroupName = "1. Position Sizing", Order = 4)]
+		[Display(Name = "Max contracts", Description = "Hard ceiling on size. The last line of defence against a sizing bug.", GroupName = "1. Position Sizing", Order = 2)]
 		public int MaxContracts { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Allow minimum 1 contract", GroupName = "1. Position Sizing", Order = 5)]
-		public bool AllowMinimumOneContract { get; set; }
-
-		[NinjaScriptProperty]
 		[Range(0.01, double.MaxValue)]
-		[Display(Name = "Tick value ($)", Description = "NQ = 5.00, MNQ = 0.50.", GroupName = "1. Position Sizing", Order = 6)]
+		[Display(Name = "Tick value ($)", Description = "NQ = 5.00, MNQ = 0.50.", GroupName = "1. Position Sizing", Order = 3)]
 		public double TickValueDollars { get; set; }
 
 		[NinjaScriptProperty]
-		[Range(0, double.MaxValue)]
-		[Display(Name = "Backtest starting equity ($)", GroupName = "1. Position Sizing", Order = 7)]
-		public double BacktestStartingEquity { get; set; }
-
-		[NinjaScriptProperty]
-		[Display(Name = "Scale size by confirmation strength", Description = "Reduce size when the VIX or leaders agree only weakly.", GroupName = "1. Position Sizing", Order = 8)]
+		[Display(Name = "Scale size by confirmation strength", Description = "Reduce size when the VIX or leaders agree only weakly. Only bites when Fixed contracts is above 1.", GroupName = "1. Position Sizing", Order = 4)]
 		public bool UseConfidenceSizing { get; set; }
 
 		[NinjaScriptProperty]

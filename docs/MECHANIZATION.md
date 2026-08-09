@@ -181,23 +181,36 @@ Entry requires price to trade into the zone **and then** a bar to close in the t
 direction. Without that confirmation the entry is a limit order into a zone with no
 evidence it is holding.
 
-**Stop:** beyond the sweep extreme by 0.25 × ATR. That wick is the point the whole
-premise is wrong, which makes it the only honest place for the stop.
+**Stop:** a fixed `Stop loss (ticks)` from entry, 60 by default — 15 points, $300 on one
+NQ contract. Risk per trade is therefore decided by you rather than by whatever the
+setup happened to look like, which is why position sizing has no dollar budget: ticks ×
+tick value × contracts is the whole calculation.
 
-**Target:** 2R by default, or the next opposing liquidity level if `Target (R multiple)`
-is set to 0.
+Setting `Stop loss (ticks)` to 0 restores the original rule: **beyond the sweep extreme
+by 0.25 × ATR**, on the reasoning that the wick is the point the whole premise is wrong
+and so the only honest place for the stop. In that mode the `Min` / `Max stop (ticks)`
+band applies and setups outside it are skipped.
+
+The trade-off is real and worth stating. A fixed stop tighter than the structure sits
+*between* entry and the swept extreme — so price returning to test that extreme, which
+is what the setup expects it to do, stops the trade out first. The run summary reports
+what fraction of setups had their structure inside the fixed stop, so this shows up as a
+number rather than as unexplained losses.
+
+**Target:** `Target (R multiple)` × the stop distance, 2R by default, measured from
+whichever stop is in use. Set to 0 to target the next opposing liquidity level instead,
+which is an absolute price and does not scale with the stop.
 
 **Invalidation:** if price trades back through the sweep extreme before entry, the setup
 is abandoned.
-
-Setups needing a stop tighter than 20 ticks or wider than 200 are skipped.
 
 | Decision I made | Parameter | Needs your sign-off |
 |---|---|---|
 | Retest zone = broken structure level (confirmed) | `Retest zone mode` | Selected. The other two remain available for comparison. |
 | Confirmation close required | `Require confirmation close` | Off gives better fills and more entries, with less evidence |
 | 2R target | `Target (R multiple)` | Or target liquidity with 0 |
-| Stop 0.25 × ATR beyond the sweep wick | `Stop buffer (ATR)` | |
+| Fixed 60-tick stop, structure stop available at 0 | `Stop loss (ticks)` | Chosen by you. The structure stop is the more faithful reading of the rule; the fixed stop is the one you can size around. |
+| Stop 0.25 × ATR beyond the sweep wick, when the fixed stop is off | `Stop buffer (ATR)` | |
 
 ---
 

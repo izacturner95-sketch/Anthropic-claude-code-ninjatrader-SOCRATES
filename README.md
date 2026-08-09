@@ -41,8 +41,9 @@ into arithmetic, and is the file to read first.
 | Globex hours | Sun 18:00 ET – Fri 17:00 ET, daily halt 17:00–18:00 ET |
 | Regular hours | 09:30 – 16:00 ET |
 
-At one contract, a 50-point adverse move is $1,000. Sizing and stop distance are
-the same decision, which is why they are handled together.
+At one contract, a 50-point adverse move is $1,000. Risk per trade is set by the
+stop, not by a dollar budget: **Stop loss (ticks)** x tick value x contracts is the
+whole calculation, known before the order goes out.
 
 The Micro (MNQ) is one tenth the size — $0.50 per tick, $2.00 per point. Switching
 the strategy to MNQ is a single parameter change (**Tick value**).
@@ -64,7 +65,7 @@ src/NinjaTrader8/
     SetupEngine.cs         Sequencing state machine for steps 2-4
     Confirmations.cs       VIX and Magnificent 7 gates
     RiskManager.cs         Session windows, daily loss limits, halts
-    PositionSizer.cs       Fixed / fixed-risk / percent-of-equity sizing
+    PositionSizer.cs       Fixed contract sizing under a ceiling
     Signal.cs              Shared trade direction type
 docs/
   MECHANIZATION.md         How the written rules became arithmetic
