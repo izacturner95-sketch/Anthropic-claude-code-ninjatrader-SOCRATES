@@ -84,7 +84,7 @@ The engine classes are plain C# with no NinjaTrader dependencies. Only
 | NQ intraday | Primary | always |
 | NQ daily, weekly | Prior period levels and pivots | always |
 | NQ 4-hour | 4-hour pivots | **Use 4-hour pivots** on |
-| `VX ##-##` | Step 5 | **VIX mode** not Off |
+| `VX` | Step 5 | **VIX mode** not Off |
 | AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA | Step 6 | **Breadth mode** not Off |
 
 **Steps 5 and 6 ship Off.** With both on the strategy loads twelve series, and every
@@ -99,7 +99,7 @@ midnight.
 
 The two confirmations handle the overnight session differently, because the data does.
 
-**Step 5 uses VIX futures**, `VX ##-##`, not the `^VIX` index. The index is only
+**Step 5 uses VIX futures**, `VX`, not the `^VIX` index. The index is only
 published around the cash session, so on a Globex chart it is dark for most of the night
 and could not confirm anything; VX trades close to 23 hours. It prices in contango
 rather than tracking spot exactly, which does not matter here — the step reads direction

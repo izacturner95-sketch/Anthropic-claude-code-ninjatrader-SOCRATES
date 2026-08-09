@@ -263,8 +263,8 @@ they need different fixes.
 With `Scale size by confirmation strength` enabled, a weak confirmation reduces
 position size instead of blocking the trade.
 
-> **Data dependency.** This step defaults to the continuous VIX future, `VX ##-##`,
-> rather than the `^VIX` index, and the reason is the overnight session: the index is
+> **Data dependency.** This step defaults to the VIX future, `VX`, rather than the
+> `^VIX` index, and the reason is the overnight session: the index is
 > only published around the cash hours, so on a Globex chart it is dark for most of the
 > night and cannot confirm anything. VX trades close to 23 hours.
 >

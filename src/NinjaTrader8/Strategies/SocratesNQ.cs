@@ -257,7 +257,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// night and cannot confirm anything; VX trades close to 23 hours. It prices
 				// in contango rather than tracking spot exactly, which does not matter here -
 				// the step reads direction and levels, not the absolute number.
-				VixSymbol = "VX ##-##";
+				//
+				// Plain "VX" rather than "VX ##-##": the ##-## form asks NinjaTrader to build
+				// a continuous series, which it can only do with the history and merge policy
+				// to back it, and it returned an empty series here. The bare name resolves
+				// through the instrument list instead.
+				VixSymbol = "VX";
 				VixBarMinutes = 5;
 				VixLookbackBars = 6;
 				// An absolute floor only. The real test scales to the VIX's own ATR, because
@@ -1238,7 +1243,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				&& VixSymbol.TrimStart().StartsWith("^"))
 			{
 				Print("  WARNING: extended hours with the ^VIX index. It is not published overnight, so");
-				Print("           step 5 will refuse every setup outside the cash session. Use VX ##-## instead.");
+				Print("           step 5 will refuse every setup outside the cash session. Use VX instead.");
 			}
 
 			// NinjaTrader keeps the parameter values you configured on an instance, so a
@@ -1778,7 +1783,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public ConfirmationMode VixMode { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "VIX symbol", Description = "VX ##-## is the continuous VIX future, which trades nearly 23 hours and so works overnight. ^VIX is the index and is only published around the cash session. Must exist in your feed either way.", GroupName = "7. Step 5 - VIX", Order = 1)]
+		[Display(Name = "VIX symbol", Description = "VX is the VIX future, which trades nearly 23 hours and so works overnight. VX ##-## asks for a built continuous series and can come back empty. ^VIX is the index, only published around the cash session. Must exist in your feed either way.", GroupName = "7. Step 5 - VIX", Order = 1)]
 		public string VixSymbol { get; set; }
 
 		[NinjaScriptProperty]
