@@ -83,11 +83,28 @@ namespace Socrates.Market
 		/// </summary>
 		public bool RequireConfirmationClose = true;
 
-		/// <summary>Buffer beyond the sweep extreme for the protective stop, as a multiple of ATR.</summary>
+		/// <summary>Buffer beyond the swing the stop is anchored to, as a multiple of ATR.</summary>
 		public double StopBufferAtr = 0.25;
 
-		/// <summary>Reward-to-risk multiple for the profit target. Zero means target the opposing liquidity level instead.</summary>
+		/// <summary>
+		/// Fallback reward-to-risk multiple, used only when no previous swing far enough away
+		/// exists to target. Zero falls back to the opposing liquidity level instead.
+		/// </summary>
 		public double TargetRMultiple = 2.0;
+
+		/// <summary>
+		/// How far short of the previous swing to place the target, in points. "At or just
+		/// below the previous high" - the last ticks into a level are where the reversal
+		/// happens, so the exit sits in front of it rather than on it.
+		/// </summary>
+		public double TargetBufferPoints = 1.0;
+
+		/// <summary>
+		/// Minimum reward-to-risk for a setup to be taken. With both the stop and the target
+		/// read off structure, the ratio is whatever the chart happens to offer, and some of
+		/// what it offers is not worth trading. Zero disables.
+		/// </summary>
+		public double MinRewardRisk = 1.0;
 	}
 
 	public struct SetupResult
@@ -113,8 +130,14 @@ namespace Socrates.Market
 		private double zoneHalfWidth;
 		private bool zoneTouched;
 		private int discardedTooWide;
+		private int discardedPoorReward;
 		private int sweepsAdopted;
 		private int sweepsIgnored;
+		private int stopsFromSwing;
+		private int stopsFromSweepExtreme;
+		private int targetsFromSwing;
+		private int targetsFromRMultiple;
+		private int targetsFromLiquidity;
 
 		public SetupEngine(SetupEngineSettings settings)
 		{
@@ -138,6 +161,21 @@ namespace Socrates.Market
 
 		/// <summary>Sweeps left alone because a setup was already developing. A high ratio here means the level book is generating noise.</summary>
 		public int SweepsIgnored { get { return sweepsIgnored; } }
+
+		/// <summary>Setups abandoned because the structural target did not pay for the structural stop.</summary>
+		public int DiscardedPoorReward { get { return discardedPoorReward; } }
+
+		/// <summary>Stops anchored to a swing since the sweep, versus falling back to the swept extreme.</summary>
+		public int StopsFromSwing { get { return stopsFromSwing; } }
+
+		public int StopsFromSweepExtreme { get { return stopsFromSweepExtreme; } }
+
+		/// <summary>Targets taken from a previous swing, versus the R-multiple or liquidity fallbacks.</summary>
+		public int TargetsFromSwing { get { return targetsFromSwing; } }
+
+		public int TargetsFromRMultiple { get { return targetsFromRMultiple; } }
+
+		public int TargetsFromLiquidity { get { return targetsFromLiquidity; } }
 
 		public string LastTransition { get; private set; }
 
@@ -299,7 +337,27 @@ namespace Socrates.Market
 			}
 
 			double stopBuffer = atr * settings.StopBufferAtr;
-			double stopPrice = bullish ? sweep.ExtremePrice - stopBuffer : sweep.ExtremePrice + stopBuffer;
+
+			// Stop below the previous low, or above the previous high on a short. After a
+			// sweep and a structure shift, price pulls back into the retest and leaves a
+			// swing behind; that swing is what has to hold for the trade to be right, so it
+			// is where the stop belongs. It is also much nearer than the swept extreme, which
+			// is the whole point - anchoring to the extreme was producing 400-tick stops.
+			//
+			// Falls back to the swept extreme when no swing has confirmed since the sweep,
+			// which is the older behaviour and still correct, just wider.
+			SwingPoint stopSwing = bullish
+				? analyzer.Swings.MostRecentLowBelow(close, 0)
+				: analyzer.Swings.MostRecentHighAbove(close, 0);
+
+			double stopAnchor = stopSwing.IsValid ? stopSwing.Price : sweep.ExtremePrice;
+
+			if (stopSwing.IsValid)
+				stopsFromSwing++;
+			else
+				stopsFromSweepExtreme++;
+
+			double stopPrice = bullish ? stopAnchor - stopBuffer : stopAnchor + stopBuffer;
 			double risk = Math.Abs(close - stopPrice);
 
 			if (risk <= 0)
@@ -322,16 +380,53 @@ namespace Socrates.Market
 				return result;
 			}
 
+			// Target at, or just short of, the previous high - the previous low on a short.
+			// Searching from a minimum distance rather than taking the nearest one skips the
+			// swings too close to be worth aiming at and walks back to one that pays for the
+			// risk being taken.
+			double minTargetDistance = settings.TargetBufferPoints
+				+ (settings.MinRewardRisk > 0 ? risk * settings.MinRewardRisk : 0);
+
+			SwingPoint targetSwing = bullish
+				? analyzer.Swings.MostRecentHighAbove(close, minTargetDistance)
+				: analyzer.Swings.MostRecentLowBelow(close, minTargetDistance);
+
 			double targetPrice;
-			if (settings.TargetRMultiple > 0)
+			string targetSource;
+
+			if (targetSwing.IsValid)
+			{
+				targetPrice = bullish
+					? targetSwing.Price - settings.TargetBufferPoints
+					: targetSwing.Price + settings.TargetBufferPoints;
+
+				targetSource = string.Format("previous {0} {1:N2}", bullish ? "high" : "low", targetSwing.Price);
+				targetsFromSwing++;
+			}
+			else if (settings.TargetRMultiple > 0)
 			{
 				targetPrice = bullish
 					? close + (risk * settings.TargetRMultiple)
 					: close - (risk * settings.TargetRMultiple);
+
+				targetSource = string.Format("{0:N1}R fallback, no previous swing far enough", settings.TargetRMultiple);
+				targetsFromRMultiple++;
 			}
 			else
 			{
 				targetPrice = FindOpposingLiquidity(analyzer, close, bullish, risk);
+				targetSource = "opposing liquidity";
+				targetsFromLiquidity++;
+			}
+
+			double reward = Math.Abs(targetPrice - close);
+
+			if (settings.MinRewardRisk > 0 && reward < risk * settings.MinRewardRisk)
+			{
+				discardedPoorReward++;
+				Reset(string.Format("Reward {0:N2} against risk {1:N2} is {2:N2}R, under the {3:N2}R minimum. Setup discarded.",
+					reward, risk, reward / risk, settings.MinRewardRisk));
+				return result;
 			}
 
 			result.HasEntry = true;
@@ -340,8 +435,10 @@ namespace Socrates.Market
 			result.TargetPrice = targetPrice;
 			result.Label = bullish ? "sweepLong" : "sweepShort";
 			result.Detail = string.Format(
-				"{0}: swept {1}, structure shift at {2:N2}, retest {3:N2}. Stop {4:N2}, target {5:N2}, risk {6:N2} pts.",
-				result.Label, sweep.Level, structureReference.Price, zoneCenter, stopPrice, targetPrice, risk);
+				"{0}: swept {1}, shift at {2:N2}, retest {3:N2}. Stop {4:N2} ({5}), target {6:N2} ({7}). Risk {8:N2} pts, {9:N2}R.",
+				result.Label, sweep.Level, structureReference.Price, zoneCenter,
+				stopPrice, stopSwing.IsValid ? string.Format("previous {0} {1:N2}", bullish ? "low" : "high", stopAnchor) : "swept extreme",
+				targetPrice, targetSource, risk, reward / risk);
 
 			Reset("Entry taken.");
 			return result;

@@ -181,25 +181,27 @@ Entry requires price to trade into the zone **and then** a bar to close in the t
 direction. Without that confirmation the entry is a limit order into a zone with no
 evidence it is holding.
 
-**Stop:** a fixed `Stop loss (ticks)` from entry, 60 by default — 15 points, $300 on one
-NQ contract. Risk per trade is therefore decided by you rather than by whatever the
-setup happened to look like, which is why position sizing has no dollar budget: ticks ×
-tick value × contracts is the whole calculation.
+**Stop:** below the previous low, above the previous high on a short, by
+`Stop buffer (ATR)`. After the sweep and the structure shift, price pulls back into the
+retest and leaves a swing behind — that swing is what has to hold for the trade to be
+right, so it is where the stop belongs. It is also far nearer than the swept extreme,
+which is the point: anchoring to the extreme was measuring 169 to 810 ticks.
 
-Setting `Stop loss (ticks)` to 0 restores the original rule: **beyond the sweep extreme
-by 0.25 × ATR**, on the reasoning that the wick is the point the whole premise is wrong
-and so the only honest place for the stop. In that mode the `Min` / `Max stop (ticks)`
-band applies and setups outside it are skipped.
+If no swing has confirmed since the sweep, the stop falls back to the swept extreme —
+the older behaviour, still correct, just wider. The run summary counts how often each
+happens, because a run dominated by the fallback is not really stopping where it was
+asked to, and the fix for that is a lower `Swing strength` so swings confirm sooner.
 
-The trade-off is real and worth stating. A fixed stop tighter than the structure sits
-*between* entry and the swept extreme — so price returning to test that extreme, which
-is what the setup expects it to do, stops the trade out first. The run summary reports
-what fraction of setups had their structure inside the fixed stop, so this shows up as a
-number rather than as unexplained losses.
+**Target:** at, or `Target buffer (ticks)` short of, the previous high — the previous
+low on a short. The last ticks into a level are where it reverses, so the exit sits in
+front of it rather than on it.
 
-**Target:** `Target (R multiple)` × the stop distance, 2R by default, measured from
-whichever stop is in use. Set to 0 to target the next opposing liquidity level instead,
-which is an absolute price and does not scale with the stop.
+The previous swing is not simply the nearest one. Search starts at
+`Min reward:risk` × the risk distance and walks back, passing over swings too close to
+pay for the stop. With both legs read off structure the ratio is whatever the chart
+offers, and some of what it offers is not worth trading; a setup that cannot clear the
+minimum is discarded rather than taken at a poor price. `Target (R multiple) fallback`
+covers the case where nothing far enough away exists.
 
 **Invalidation:** if price trades back through the sweep extreme before entry, the setup
 is abandoned.
@@ -208,9 +210,10 @@ is abandoned.
 |---|---|---|
 | Retest zone = broken structure level (confirmed) | `Retest zone mode` | Selected. The other two remain available for comparison. |
 | Confirmation close required | `Require confirmation close` | Off gives better fills and more entries, with less evidence |
-| 2R target | `Target (R multiple)` | Or target liquidity with 0 |
-| Fixed 60-tick stop, structure stop available at 0 | `Stop loss (ticks)` | Chosen by you. The structure stop is the more faithful reading of the rule; the fixed stop is the one you can size around. |
-| Stop 0.25 × ATR beyond the sweep wick, when the fixed stop is off | `Stop buffer (ATR)` | |
+| 2R only as a fallback | `Target (R multiple) fallback` | Or target liquidity with 0 |
+| Stop below the previous low, target at the previous high | `Stop buffer (ATR)` / `Target buffer (ticks)` | Chosen by you. |
+| Minimum 1.0 reward:risk, and the target search starts there | `Min reward:risk` | My addition. Structural targets can sit closer than the stop; without a floor those trades get taken. Set to 0 to take whatever structure offers. |
+| Falls back to the swept extreme when no swing has confirmed | — | |
 
 ---
 

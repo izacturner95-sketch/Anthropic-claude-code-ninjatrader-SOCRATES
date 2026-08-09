@@ -65,8 +65,7 @@ The first thing printed is a banner listing every data series with its bar count
   Calculate       : OnBarClose, bars required 30
   Entry window    : 094500-154500, flatten 155500
   Sizing          : 1 contract(s), max 1, daily loss cap $1,000.00
-  Stop            : fixed 60 ticks (15.00 pts, $300.00 per contract)
-  Worst run       : 60 ticks x $5.00 x 1 contract(s) x 2 losses = $600.00, inside the $1,000.00 cap.
+  Stop            : below the previous low +/- 0.25 ATR, band 20-400 ticks (max $2,000.00 a contract)
   Step 5 (VIX)    : Off
   Step 6 (leaders): Off
   Data series     : 4
@@ -123,43 +122,40 @@ a number.
 invalidated before completing. `Setups completed` is the number that produced a
 tradeable signal, and it is that number the rejection counts below it add up to.
 
-### Choosing the stop
+### Where the stop and target come from
 
-**Stop loss (ticks)** sets the stop a fixed distance from entry, and that distance is
-the risk per trade: ticks × tick value × contracts, known before the order goes out.
-At the default 60 ticks on NQ that is 15 points, $300 a contract.
+Both are read off structure, so neither is a number you set directly:
 
-The startup banner multiplies it out against the daily loss limit:
+- **Stop** goes below the previous low — above the previous high on a short — by
+  `Stop buffer (ATR)`. That swing is what has to hold for the trade to be right.
+- **Target** goes at, or `Target buffer (ticks)` short of, the previous high. The last
+  ticks into a level are where it reverses, so the exit sits in front of it.
 
-```
-  Worst run       : 60 ticks x $5.00 x 1 contract(s) x 2 losses = $600.00,
-                    inside the $1,000.00 cap.
-```
-
-If it overshoots, that is a real conflict rather than a formatting nag — a cap two
-stop-outs cannot reach never fires. Raise the cap, drop to MNQ (**Tick value** 0.50),
-or tighten the stop.
-
-Setting it to **0** goes back to the structure stop: beyond the swept extreme plus a
-buffer, sized by whatever the setup happened to be, and gated by the **Min / Max stop
-(ticks)** band. That is what the strategy was originally built around, and it is the
-more faithful reading of "the stop belongs beyond the liquidity that was swept" — but
-the distance is then out of your hands.
-
-Either way, the summary reports what the structure implied, so you can see how a fixed
-stop compares:
+Which means risk per trade varies by setup. `Max setup risk (ATR)` is the ceiling that
+keeps it sane; `Min / Max stop (ticks)` is a backstop behind that. The banner prices the
+worst case against your daily loss limit:
 
 ```
-  --- stop distance the structure implied, 45 completed setups (ticks) ---
-  Min 84, mean 173, max 391. Using fixed 60 ticks (15.00 pts, $300.00 per contract).
-  0 of 45 setups had structure inside the 60 tick stop (0%).
-  NOTE: most stops sit inside the swept extreme. Expect stop-outs on the retest itself.
+  Stop            : below the previous low +/- 0.25 ATR, band 20-400 ticks (max $2,000.00 a contract)
+  WARNING: 400 ticks x $5.00 x 1 contract(s) x 2 losses = $4,000.00,
+           which overshoots the $1,000.00 daily cap.
 ```
 
-That note matters. A fixed stop tighter than the structure sits **between** entry and
-the swept extreme — so price coming back to test that extreme, which is exactly what
-the setup expects it to do, takes the trade out first. A high stop-out rate with a
-tight fixed stop is that, not a broken signal.
+Because the structural stop is not fixed, that warning uses the widest stop the band
+would admit. Tighten `Max setup risk (ATR)` to bring it down, or run MNQ.
+
+The summary then reports where the exits actually came from:
+
+```
+  Anchored to a previous swing: 11. Fell back to the swept extreme: 3.
+  Targets: 9 from a previous swing, 5 from the R fallback, 0 from liquidity
+```
+
+Two things to watch there. If the **swept-extreme fallback dominates**, no swing is
+confirming between the sweep and the retest, so the stop is not coming from where you
+asked — lower `Swing strength` so swings confirm sooner. If the **R fallback
+dominates**, the previous highs are not far enough away to pay for the stops, so either
+the stops are too wide or `Min reward:risk` is set too high.
 
 **Min displacement (ATR)**, default 1.0, is the other setting that thins the funnel
 hard — requiring the structure-breaking bar to span a full ATR is demanding on a

@@ -210,6 +210,40 @@ namespace Socrates.Market
 			return result;
 		}
 
+		/// <summary>
+		/// Most recent confirmed swing high at least minDistance above the given price.
+		///
+		/// Scanning newest first means "the previous high" is the one price last turned at,
+		/// not the largest in memory. minDistance walks past highs too close to be worth
+		/// aiming at - a target two points away is not a target.
+		/// </summary>
+		public SwingPoint MostRecentHighAbove(double price, double minDistance)
+		{
+			double threshold = price + Math.Max(0, minDistance);
+
+			for (int i = highs.Count - 1; i >= 0; i--)
+			{
+				if (highs[i].Price >= threshold)
+					return highs[i];
+			}
+
+			return default(SwingPoint);
+		}
+
+		/// <summary>Most recent confirmed swing low at least minDistance below the given price.</summary>
+		public SwingPoint MostRecentLowBelow(double price, double minDistance)
+		{
+			double threshold = price - Math.Max(0, minDistance);
+
+			for (int i = lows.Count - 1; i >= 0; i--)
+			{
+				if (lows[i].Price <= threshold)
+					return lows[i];
+			}
+
+			return default(SwingPoint);
+		}
+
 		private void Append(List<SwingPoint> target, SwingPoint point)
 		{
 			target.Add(point);

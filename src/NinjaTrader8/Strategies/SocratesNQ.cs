@@ -156,16 +156,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 				TickValueDollars = 5.00;
 				UseConfidenceSizing = false;
 
-				// The stop is placed this far from entry, and that fixes the risk: 60 ticks
-				// is 15 points, $300 on one NQ contract. Two of those is $600, inside the
-				// $1,000 daily cap, so the limits agree.
-				//
-				// Set to 0 to go back to the structure stop - beyond the swept extreme plus
-				// a buffer - which is what the strategy was originally built around. The run
-				// summary prints what that stop would have measured either way, so you can
-				// see whether a fixed 60 ticks sits inside or outside where structure is.
-				StopLossTicks = 60;
-
 				// --- Risk ---
 				SessionStartTime = 94500;
 				SessionEndTime = 154500;
@@ -216,8 +206,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 				ZoneMode = RetestZoneMode.BrokenStructure;
 				RetestZoneAtr = 0.30;
 				RequireConfirmationClose = true;
+
+				// Both legs are read off structure: the stop goes below the previous low,
+				// the target at or just short of the previous high. Mirror image on a short.
 				StopBufferAtr = 0.25;
+				TargetBufferTicks = 4;
+				MinRewardRisk = 1.0;
+
+				// Only used when no previous swing sits far enough away to aim at.
 				TargetRMultiple = 2.0;
+
 				MinStopTicks = 20;
 
 				// Only consulted when Stop loss (ticks) is 0 and the stop comes from structure.
@@ -315,7 +313,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 					RetestZoneAtr = RetestZoneAtr,
 					RequireConfirmationClose = RequireConfirmationClose,
 					StopBufferAtr = StopBufferAtr,
-					TargetRMultiple = TargetRMultiple
+					TargetRMultiple = TargetRMultiple,
+					// contract.TickSize rather than the platform's TickSize: Instrument is not
+					// reliably resolved this early in Configure, and both NQ and MNQ are 0.25.
+					TargetBufferPoints = TargetBufferTicks * contract.TickSize,
+					MinRewardRisk = MinRewardRisk
 				});
 
 				// Series are added only when the step that needs them is enabled, so a data
@@ -913,50 +915,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			bool bullish = result.Direction == TradeDirection.Long;
 			double entryPrice = Close[0];
-
 			double stopPrice = result.StopPrice;
 			double targetPrice = result.TargetPrice;
-			double structureStopTicks = Math.Abs(entryPrice - result.StopPrice) / TickSize;
-			double stopDistanceTicks = structureStopTicks;
+			double stopDistanceTicks = Math.Abs(entryPrice - stopPrice) / TickSize;
 
-			if (StopLossTicks > 0)
+			if (stopDistanceTicks < MinStopTicks)
 			{
-				// A fixed stop replaces the structure stop, so the target has to be rebuilt
-				// from it too - the R multiple was measured against a distance that no longer
-				// applies. A target set from the opposing liquidity level (R multiple 0) is
-				// an absolute price and stands as it is.
-				double stopDistance = StopLossTicks * TickSize;
-				stopPrice = bullish ? entryPrice - stopDistance : entryPrice + stopDistance;
-				stopDistanceTicks = StopLossTicks;
-
-				if (TargetRMultiple > 0)
-				{
-					targetPrice = bullish
-						? entryPrice + (stopDistance * TargetRMultiple)
-						: entryPrice - (stopDistance * TargetRMultiple);
-				}
+				dayRejectedStop++;
+				totalRejectedStop++;
+				Log(string.Format("Entry skipped: stop {0:N0} ticks is below the {1} tick minimum. {2}",
+					stopDistanceTicks, MinStopTicks, result.Detail));
+				return;
 			}
-			else
-			{
-				// The band only means anything when the stop comes from the structure. With a
-				// fixed stop every trade measures the same and the test is a no-op.
-				if (stopDistanceTicks < MinStopTicks)
-				{
-					dayRejectedStop++;
-					totalRejectedStop++;
-					Log(string.Format("Entry skipped: stop {0:N0} ticks is below the {1} tick minimum. {2}",
-						stopDistanceTicks, MinStopTicks, result.Detail));
-					return;
-				}
 
-				if (stopDistanceTicks > MaxStopTicks)
-				{
-					dayRejectedStop++;
-					totalRejectedStop++;
-					Log(string.Format("Entry skipped: stop {0:N0} ticks exceeds the {1} tick maximum. {2}",
-						stopDistanceTicks, MaxStopTicks, result.Detail));
-					return;
-				}
+			if (stopDistanceTicks > MaxStopTicks)
+			{
+				dayRejectedStop++;
+				totalRejectedStop++;
+				Log(string.Format("Entry skipped: stop {0:N0} ticks exceeds the {1} tick maximum. {2}",
+					stopDistanceTicks, MaxStopTicks, result.Detail));
+				return;
 			}
 
 			string sizingReason;
@@ -998,15 +976,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			else
 				shortEntries++;
 
-			Log(string.Format("ENTRY {0} x{1} @ ~{2:N2}, stop {3:N2}, target {4:N2}. {5} {6}",
-				result.Direction, contracts, entryPrice, stopPrice, targetPrice, result.Detail, sizingReason));
-
-			if (StopLossTicks > 0 && structureStopTicks > StopLossTicks)
-			{
-				Log(string.Format(
-					"  Fixed stop is {0:N0} ticks inside where structure put it ({1:N0}). The swept extreme is not protected.",
-					structureStopTicks - StopLossTicks, structureStopTicks));
-			}
+			Log(string.Format("ENTRY {0} x{1} @ ~{2:N2}, stop {3:N2} ({4:N0} ticks), target {5:N2}. {6} {7}",
+				result.Direction, contracts, entryPrice, stopPrice, stopDistanceTicks, targetPrice,
+				result.Detail, sizingReason));
 		}
 
 		private void CloseCurrentPosition()
@@ -1194,6 +1166,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				SwingStrength, MinDisplacementAtr, MaxSetupRiskAtr, MaxBarsSweepToShift));
 			Print(string.Format("  Retest       : zone {0} +/- {1:N2} ATR, {2} bars to retest, confirmation close {3}",
 				ZoneMode, RetestZoneAtr, MaxBarsShiftToRetest, RequireConfirmationClose ? "required" : "not required"));
+			Print(string.Format("  Exits        : stop {0:N2} ATR past the previous swing, target {1} ticks short of the next one, min {2:N2}R",
+				StopBufferAtr, TargetBufferTicks, MinRewardRisk));
 
 			Print("===================================================================");
 		}
@@ -1209,7 +1183,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (MaxDailyLossDollars <= 0 || MaxConsecutiveLosses <= 0)
 				return;
 
-			int worstStopTicks = StopLossTicks > 0 ? StopLossTicks : MaxStopTicks;
+			// The stop is structural, so its size is not known in advance. MaxStopTicks is the
+			// only hard ceiling on it, which makes it the worst case for this arithmetic.
+			int worstStopTicks = MaxStopTicks;
 			int contracts = Math.Max(1, MaxContracts);
 			double worstCase = worstStopTicks * TickValueDollars * contracts * MaxConsecutiveLosses;
 
@@ -1231,10 +1207,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private string DescribeStop()
 		{
-			return StopLossTicks > 0
-				? string.Format("fixed {0} ticks ({1:N2} pts, {2:C} per contract)",
-					StopLossTicks, StopLossTicks * TickSize, StopLossTicks * TickValueDollars)
-				: string.Format("from structure, band {0}-{1} ticks", MinStopTicks, MaxStopTicks);
+			return string.Format("below the previous low +/- {0:N2} ATR, band {1}-{2} ticks (max {3:C} a contract)",
+				StopBufferAtr, MinStopTicks, MaxStopTicks, MaxStopTicks * TickValueDollars);
 		}
 
 		private string DescribeSeries(int index)
@@ -1318,11 +1292,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Structure shifts (3) : {0}", totalShifts));
 			Print(string.Format("      discarded, too wide: {0}", setup != null ? setup.DiscardedTooWide : 0));
 			Print(string.Format("  Retests reached (4)  : {0}", totalZoneTouches));
+
+			if (setup != null && setup.DiscardedPoorReward > 0)
+				Print(string.Format("      discarded, reward below {0:N2}R: {1}", MinRewardRisk, setup.DiscardedPoorReward));
+
 			Print(string.Format("  Setups completed     : {0}  ({1} long / {2} short)", completedSetups, longSetups, shortSetups));
 			Print(string.Format("  Entries submitted    : {0}  ({1} long / {2} short)", totalEntries, longEntries, shortEntries));
 
 			if (nq != null && nq.Sweeps.AmbiguousBars > 0)
 				Print(string.Format("  Bars sweeping both sides at once: {0} (resolved to the deeper raid)", nq.Sweeps.AmbiguousBars));
+
+			if (setup != null && setup.TargetsFromSwing + setup.TargetsFromRMultiple + setup.TargetsFromLiquidity > 0)
+			{
+				Print(string.Format("  Targets: {0} from a previous swing, {1} from the R fallback, {2} from liquidity",
+					setup.TargetsFromSwing, setup.TargetsFromRMultiple, setup.TargetsFromLiquidity));
+
+				// The point of the change was structural targets. If the fallback dominates,
+				// the previous highs are not far enough away to pay for the stops.
+				if (setup.TargetsFromSwing < setup.TargetsFromRMultiple + setup.TargetsFromLiquidity)
+					Print("  NOTE: most targets came from the fallback, not a previous swing. Lower 'Min reward:risk' or check stop sizes.");
+			}
 			Print("  --- of the completed setups, rejected by ---");
 			Print(string.Format("  Risk gate            : {0}", totalBlockedByRisk));
 
@@ -1381,26 +1370,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 					(running * 100.0) / stopSamples));
 			}
 
-			if (StopLossTicks > 0)
+			if (setup != null)
 			{
-				int inside = 0;
+				int anchored = setup.StopsFromSwing;
+				int fellBack = setup.StopsFromSweepExtreme;
 
-				for (int i = 0; i < StopBucketCount; i++)
+				if (anchored + fellBack > 0)
 				{
-					if ((i + 1) * StopBucketTicks <= StopLossTicks)
-						inside += stopTickBuckets[i];
+					Print(string.Format("  Anchored to a previous swing: {0}. Fell back to the swept extreme: {1}.",
+						anchored, fellBack));
+
+					// The fallback is the old, much wider behaviour. If it dominates, no swing
+					// is confirming between the sweep and the retest and the stop is not
+					// really coming from where it was asked to.
+					if (fellBack > anchored)
+						Print("  NOTE: most stops fell back to the swept extreme. Lower 'Swing strength' so swings confirm sooner.");
 				}
-
-				// A fixed stop tighter than the structure means the swept extreme sits on the
-				// far side of it. Price returning to test that extreme - which is the thing
-				// the setup expects it to do - takes the trade out first.
-				Print(string.Format("  {0} of {1} setups had structure inside the {2} tick stop ({3:N0}%).",
-					inside, stopSamples, StopLossTicks, (inside * 100.0) / stopSamples));
-
-				if (inside * 2 < stopSamples)
-					Print("  NOTE: most stops sit inside the swept extreme. Expect stop-outs on the retest itself.");
-
-				return;
 			}
 
 			int wouldPass = 0;
@@ -1431,11 +1416,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, int.MaxValue)]
 		[Display(Name = "Fixed contracts", GroupName = "1. Position Sizing", Order = 0)]
 		public int FixedContracts { get; set; }
-
-		[NinjaScriptProperty]
-		[Range(0, 2000)]
-		[Display(Name = "Stop loss (ticks)", Description = "Distance from entry to the protective stop. This is the risk per trade: ticks x tick value x contracts. 0 uses the structure stop instead - beyond the swept extreme - and re-enables the min/max stop band.", GroupName = "1. Position Sizing", Order = 1)]
-		public int StopLossTicks { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, int.MaxValue)]
@@ -1595,22 +1575,32 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		[NinjaScriptProperty]
 		[Range(0, 5)]
-		[Display(Name = "Stop buffer (ATR)", Description = "Distance beyond the sweep extreme for the protective stop.", GroupName = "6. Step 4 - Retest", Order = 4)]
+		[Display(Name = "Stop buffer (ATR)", Description = "How far below the previous low the stop sits, above the previous high on a short.", GroupName = "6. Step 4 - Retest", Order = 4)]
 		public double StopBufferAtr { get; set; }
 
 		[NinjaScriptProperty]
+		[Range(0, 200)]
+		[Display(Name = "Target buffer (ticks)", Description = "How far short of the previous high the target sits, above the previous low on a short. The last ticks into a level are where it reverses.", GroupName = "6. Step 4 - Retest", Order = 5)]
+		public int TargetBufferTicks { get; set; }
+
+		[NinjaScriptProperty]
 		[Range(0, 20)]
-		[Display(Name = "Target (R multiple)", Description = "0 targets the next opposing liquidity level instead.", GroupName = "6. Step 4 - Retest", Order = 5)]
+		[Display(Name = "Min reward:risk", Description = "Skip setups whose previous high does not pay for the stop. Also sets how far back to look: nearer swings are passed over until one is this many times the risk away. 0 disables.", GroupName = "6. Step 4 - Retest", Order = 6)]
+		public double MinRewardRisk { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 20)]
+		[Display(Name = "Target (R multiple) fallback", Description = "Used only when no previous swing is far enough away to target. 0 falls back to the next opposing liquidity level instead.", GroupName = "6. Step 4 - Retest", Order = 7)]
 		public double TargetRMultiple { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(1, 1000)]
-		[Display(Name = "Min stop (ticks)", Description = "Setups with a tighter stop are skipped as noise.", GroupName = "6. Step 4 - Retest", Order = 6)]
+		[Display(Name = "Min stop (ticks)", Description = "Setups with a tighter stop are skipped as noise.", GroupName = "6. Step 4 - Retest", Order = 8)]
 		public int MinStopTicks { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(1, 2000)]
-		[Display(Name = "Max stop (ticks)", Description = "Setups needing a wider stop are skipped. Entry is at the broken structure and the stop sits beyond the swept extreme, so this has to cover a whole displacement leg. The run summary prints the distribution actually asked for; the startup banner warns if this contradicts the daily loss limit.", GroupName = "6. Step 4 - Retest", Order = 7)]
+		[Display(Name = "Max stop (ticks)", Description = "Backstop only - 'Max setup risk (ATR)' is the real ceiling and works in the units the market moves in. The banner warns if this contradicts the daily loss limit.", GroupName = "6. Step 4 - Retest", Order = 9)]
 		public int MaxStopTicks { get; set; }
 
 		[NinjaScriptProperty]
