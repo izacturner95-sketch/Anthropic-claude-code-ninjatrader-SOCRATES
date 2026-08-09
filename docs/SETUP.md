@@ -118,13 +118,42 @@ Each line is a step of the sequence, and the first one that reads zero is the on
 loosen. `Verbose logging` prints every state transition if you need the detail behind
 a number.
 
-Two settings block far more setups than people expect:
+`Retests reached` counts every touch of a retest zone; most of those time out or get
+invalidated before completing. `Setups completed` is the number that produced a
+tradeable signal, and it is that number the rejection counts below it add up to.
 
-- **Max stop (ticks)**, default 100. The stop sits beyond the swept extreme, so a
-  wide sweep produces a wide stop and the setup is skipped. Raising it means raising
-  the daily loss limit too — see the comment on the parameter.
-- **Min displacement (ATR)**, default 1.0. Requiring the structure-breaking bar to
-  span a full ATR is a demanding test on a 5-minute chart.
+### Choosing the stop band
+
+The summary prints the stop distance every completed setup asked for:
+
+```
+  --- stop distance asked for by 45 completed setups (ticks) ---
+  Min 84, mean 173, max 391. Band admits 20-200.
+     75-99      3  (  7% at or below)
+    100-124     6  ( 20% at or below)
+    ...
+```
+
+Entry is at the broken structure level and the stop sits beyond the swept extreme, so
+the distance between them is the whole displacement leg — much wider than a stop
+placed off the entry bar. Read `Max stop (ticks)` off the histogram rather than
+picking a round number.
+
+Then check the startup banner. It multiplies the band out against the daily loss
+limit and warns when they contradict each other:
+
+```
+  WARNING: 200 ticks x $5.00 x 1 contract(s) x 2 losses = $2,000.00,
+           which overshoots the $1,000.00 daily cap.
+```
+
+That is a real conflict, not a formatting nag: a cap two stop-outs cannot reach never
+fires. Raise the cap, drop to MNQ (**Tick value** 0.50, where the same 50-point stop
+costs $100 instead of $1,000), or accept fewer trades with a tighter band.
+
+**Min displacement (ATR)**, default 1.0, is the other setting that thins the funnel
+hard — requiring the structure-breaking bar to span a full ATR is demanding on a
+5-minute chart.
 
 ## 8. Before going live
 

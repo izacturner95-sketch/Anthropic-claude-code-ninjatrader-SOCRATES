@@ -105,6 +105,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int totalRejectedStop;
 		private int totalRejectedSizing;
 
+		// "Blocked by risk" spans four very different situations - a session window that
+		// excludes most of a 24-hour chart is not the same problem as a daily loss halt.
+		private readonly int[] blockReasonCounts = new int[8];
+
+		// Every completed setup's stop distance, whether or not it passed the band. Without
+		// the distribution, choosing MaxStopTicks is guesswork; with it the setting reads
+		// straight off the histogram.
+		private const int StopBucketTicks = 25;
+		private const int StopBucketCount = 12;
+		private readonly int[] stopTickBuckets = new int[StopBucketCount];
+		private int stopSamples;
+		private double stopTicksMin;
+		private double stopTicksMax;
+		private double stopTicksSum;
+
 		protected override void OnStateChange()
 		{
 			if (State == State.SetDefaults)
@@ -180,11 +195,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 				TargetRMultiple = 2.0;
 				MinStopTicks = 20;
 
-				// 100 ticks is 25 points, or $500 on one NQ contract. Paired with the
-				// 2-consecutive-loss halt that is $1,000, which is exactly the daily loss
-				// cap - so the two limits agree instead of the cap being breached in one
-				// trade. Raise this only alongside the daily loss limit.
-				MaxStopTicks = 100;
+				// This was 100 ticks (25 points), chosen so that two consecutive stop-outs on
+				// one NQ contract came to exactly the $1,000 daily cap. The arithmetic was
+				// tidy and the number was unreachable: entry is at the broken structure level
+				// and the stop sits beyond the swept extreme, so the distance between them is
+				// the whole displacement leg. On 5-minute NQ that leg is rarely under 25
+				// points, and a run of 45 completed setups produced zero fills.
+				//
+				// 200 ticks is 50 points. On NQ that is $1,000 a contract, so two stop-outs
+				// breach the daily cap - the startup banner says so, with the arithmetic. The
+				// three ways out are a $2,000 cap, MNQ instead of NQ (same 50 points costs
+				// $100), or accepting fewer trades by lowering this again. The run summary
+				// now prints the distribution of stop distances the setups actually asked
+				// for, so that is a decision with numbers behind it rather than a guess.
+				MaxStopTicks = 200;
 
 				// --- Step 5: VIX ---
 				//
@@ -501,12 +525,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!result.HasEntry)
 				return;
 
+			// Sampled here rather than in SubmitEntry so the distribution covers every
+			// completed setup, including the ones the risk gate turns away below.
+			RecordStopDistance(Math.Abs(Close[0] - result.StopPrice) / TickSize);
+
 			string blockDetail;
 			EntryBlockReason block = risk.CanEnter(timeOfDay, out blockDetail);
 			if (block != EntryBlockReason.None)
 			{
 				dayBlockedByRisk++;
 				totalBlockedByRisk++;
+
+				int reason = (int)block;
+				if (reason >= 0 && reason < blockReasonCounts.Length)
+					blockReasonCounts[reason]++;
+
 				Log(string.Format("Setup complete but entry blocked ({0}): {1}", block, blockDetail));
 				return;
 			}
@@ -1039,6 +1072,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			totalSweeps = totalShifts = totalZoneTouches = totalEntries = 0;
 			totalBlockedByRisk = totalRejectedVix = totalRejectedBreadth = totalRejectedStop = totalRejectedSizing = 0;
+
+			Array.Clear(blockReasonCounts, 0, blockReasonCounts.Length);
+			Array.Clear(stopTickBuckets, 0, stopTickBuckets.Length);
+			stopSamples = 0;
+			stopTicksMin = 0;
+			stopTicksMax = 0;
+			stopTicksSum = 0;
 		}
 
 		/// <summary>
@@ -1079,7 +1119,34 @@ namespace NinjaTrader.NinjaScript.Strategies
 					Print("  NOTE: fewer than two weekly bars. Prior-week levels and weekly pivots will be skipped.");
 			}
 
+			LogRiskConsistency();
+
 			Print("===================================================================");
+		}
+
+		/// <summary>
+		/// The stop band and the daily loss limit are two ways of saying the same thing, and
+		/// they can be set to contradict each other. Worst case is a full-width stop taken
+		/// MaxConsecutiveLosses times at MaxContracts; if that exceeds the daily cap, the cap
+		/// is unreachable and the halt it is meant to trigger will never fire in time.
+		/// </summary>
+		private void LogRiskConsistency()
+		{
+			if (MaxDailyLossDollars <= 0 || MaxConsecutiveLosses <= 0)
+				return;
+
+			double worstCase = MaxStopTicks * TickValueDollars * Math.Max(1, MaxContracts) * MaxConsecutiveLosses;
+
+			if (worstCase <= MaxDailyLossDollars)
+				return;
+
+			Print(string.Format(
+				"  WARNING: {0} ticks x {1:C} x {2} contract(s) x {3} losses = {4:C}, which overshoots the {5:C} daily cap.",
+				MaxStopTicks, TickValueDollars, Math.Max(1, MaxContracts), MaxConsecutiveLosses, worstCase, MaxDailyLossDollars));
+			Print(string.Format(
+				"           Raise the cap to {0:C}, switch to MNQ (Tick value 0.50), or lower Max stop to {1} ticks.",
+				worstCase,
+				(int)Math.Floor(MaxDailyLossDollars / (TickValueDollars * Math.Max(1, MaxContracts) * MaxConsecutiveLosses))));
 		}
 
 		private string DescribeSeries(int index)
@@ -1116,22 +1183,57 @@ namespace NinjaTrader.NinjaScript.Strategies
 				string.IsNullOrEmpty(haltReason) ? string.Empty : ", halted: " + haltReason));
 		}
 
+		private void RecordStopDistance(double stopTicks)
+		{
+			if (stopTicks <= 0 || double.IsNaN(stopTicks) || double.IsInfinity(stopTicks))
+				return;
+
+			if (stopSamples == 0 || stopTicks < stopTicksMin)
+				stopTicksMin = stopTicks;
+
+			if (stopTicks > stopTicksMax)
+				stopTicksMax = stopTicks;
+
+			stopTicksSum += stopTicks;
+			stopSamples++;
+
+			int bucket = (int)(stopTicks / StopBucketTicks);
+			if (bucket >= StopBucketCount)
+				bucket = StopBucketCount - 1;
+
+			stopTickBuckets[bucket]++;
+		}
+
 		private void LogRunSummary()
 		{
 			if (!EnableLogging)
 				return;
+
+			int completedSetups = totalEntries + totalBlockedByRisk + totalRejectedVix
+				+ totalRejectedBreadth + totalRejectedStop + totalRejectedSizing;
 
 			Print("=== Socrates NQ - run summary =====================================");
 			Print(string.Format("  Bars evaluated       : {0}", barsProcessed));
 			Print(string.Format("  Sweeps (step 2)      : {0}", totalSweeps));
 			Print(string.Format("  Structure shifts (3) : {0}", totalShifts));
 			Print(string.Format("  Retests reached (4)  : {0}", totalZoneTouches));
+			Print(string.Format("  Setups completed     : {0}", completedSetups));
 			Print(string.Format("  Entries submitted    : {0}", totalEntries));
-			Print(string.Format("  Rejected by risk gate: {0}", totalBlockedByRisk));
-			Print(string.Format("  Rejected at step 5   : {0}", totalRejectedVix));
-			Print(string.Format("  Rejected at step 6   : {0}", totalRejectedBreadth));
-			Print(string.Format("  Rejected on stop band: {0}", totalRejectedStop));
-			Print(string.Format("  Rejected on sizing   : {0}", totalRejectedSizing));
+			Print("  --- of the completed setups, rejected by ---");
+			Print(string.Format("  Risk gate            : {0}", totalBlockedByRisk));
+
+			for (int i = 0; i < blockReasonCounts.Length; i++)
+			{
+				if (blockReasonCounts[i] > 0)
+					Print(string.Format("      {0,-18} {1}", (EntryBlockReason)i, blockReasonCounts[i]));
+			}
+
+			Print(string.Format("  Step 5 (VIX)         : {0}", totalRejectedVix));
+			Print(string.Format("  Step 6 (leaders)     : {0}", totalRejectedBreadth));
+			Print(string.Format("  Stop band            : {0}", totalRejectedStop));
+			Print(string.Format("  Sizing               : {0}", totalRejectedSizing));
+
+			LogStopDistribution();
 
 			if (totalSweeps == 0)
 				Print("  No sweeps at all. Loosen 'Min penetration' or check that levels are being built.");
@@ -1140,9 +1242,53 @@ namespace NinjaTrader.NinjaScript.Strategies
 			else if (totalZoneTouches == 0)
 				Print("  Shifts but no retests. Widen 'Retest zone width (ATR)' or raise 'Max bars shift to retest'.");
 			else if (totalEntries == 0)
-				Print("  Retests reached but nothing entered. The rejection counts above say which gate is doing it.");
+				Print("  Retests reached but nothing entered. The counts above say which gate is doing it.");
 
 			Print("===================================================================");
+		}
+
+		/// <summary>
+		/// The stop distance every completed setup asked for, against the band that admits
+		/// them. MinStopTicks and MaxStopTicks can be read straight off this.
+		/// </summary>
+		private void LogStopDistribution()
+		{
+			if (stopSamples == 0)
+				return;
+
+			Print(string.Format("  --- stop distance asked for by {0} completed setups (ticks) ---", stopSamples));
+			Print(string.Format("  Min {0:N0}, mean {1:N0}, max {2:N0}. Band admits {3}-{4}.",
+				stopTicksMin, stopTicksSum / stopSamples, stopTicksMax, MinStopTicks, MaxStopTicks));
+
+			int running = 0;
+
+			for (int i = 0; i < StopBucketCount; i++)
+			{
+				if (stopTickBuckets[i] == 0)
+					continue;
+
+				running += stopTickBuckets[i];
+
+				string label = i == StopBucketCount - 1
+					? string.Format("{0,4}+     ", i * StopBucketTicks)
+					: string.Format("{0,4}-{1,-4}", i * StopBucketTicks, ((i + 1) * StopBucketTicks) - 1);
+
+				Print(string.Format("    {0} {1,4}  ({2,3:N0}% at or below)", label, stopTickBuckets[i],
+					(running * 100.0) / stopSamples));
+			}
+
+			int wouldPass = 0;
+
+			for (int i = 0; i < StopBucketCount; i++)
+			{
+				int bucketLow = i * StopBucketTicks;
+
+				if (bucketLow >= MinStopTicks && bucketLow < MaxStopTicks)
+					wouldPass += stopTickBuckets[i];
+			}
+
+			if (wouldPass == 0)
+				Print("  NOTE: the band does not overlap the distribution at all - no setup can ever pass it.");
 		}
 
 		#endregion
@@ -1340,7 +1486,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		[NinjaScriptProperty]
 		[Range(1, 2000)]
-		[Display(Name = "Max stop (ticks)", Description = "Setups needing a wider stop are skipped. Keep this consistent with the daily loss limit: ticks x $5 x max consecutive losses should not exceed it.", GroupName = "6. Step 4 - Retest", Order = 7)]
+		[Display(Name = "Max stop (ticks)", Description = "Setups needing a wider stop are skipped. Entry is at the broken structure and the stop sits beyond the swept extreme, so this has to cover a whole displacement leg. The run summary prints the distribution actually asked for; the startup banner warns if this contradicts the daily loss limit.", GroupName = "6. Step 4 - Retest", Order = 7)]
 		public int MaxStopTicks { get; set; }
 
 		[NinjaScriptProperty]
