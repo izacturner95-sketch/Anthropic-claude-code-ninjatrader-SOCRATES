@@ -67,6 +67,15 @@ namespace Socrates.Market
 
 		/// <summary>Strength assigned when direction agrees but the VIX is not reacting from a level.</summary>
 		public double WeakSignalStrength = 0.5;
+
+		/// <summary>
+		/// How old the last VIX bar may be and still be treated as a live reading.
+		///
+		/// The VIX trades regular hours only. Without this, its last cash-session close stays
+		/// in memory all night and confirms overnight trades against a price from hours ago -
+		/// which does not fail, it silently agrees, and that is worse.
+		/// </summary>
+		public double MaxDataAgeMinutes = 15;
 	}
 
 	public sealed class VixConfirmation
@@ -77,6 +86,7 @@ namespace Socrates.Market
 		private double lastClose;
 		private double referenceClose;
 		private int lastBarIndex;
+		private DateTime lastUpdateTime = DateTime.MinValue;
 		private bool hasData;
 
 		public VixConfirmation(VixConfirmationSettings settings, MarketAnalyzer analyzer)
@@ -103,6 +113,7 @@ namespace Socrates.Market
 			this.lastClose = close;
 			this.referenceClose = referenceClose;
 			this.lastBarIndex = barIndex;
+			this.lastUpdateTime = time;
 			hasData = true;
 		}
 
@@ -110,7 +121,7 @@ namespace Socrates.Market
 		/// The VIX moves inversely to the Nasdaq, so a long NQ trade wants the VIX falling
 		/// and rejecting resistance, and a short wants the VIX rising and holding support.
 		/// </summary>
-		public ConfirmationResult Evaluate(TradeDirection direction)
+		public ConfirmationResult Evaluate(TradeDirection direction, DateTime now)
 		{
 			if (settings.Mode == ConfirmationMode.Off)
 				return ConfirmationResult.Pass("VIX confirmation disabled.");
@@ -120,6 +131,14 @@ namespace Socrates.Market
 			if (!hasData)
 			{
 				result.Detail = "No VIX data available for this bar.";
+				return result;
+			}
+
+			double ageMinutes = (now - lastUpdateTime).TotalMinutes;
+
+			if (settings.MaxDataAgeMinutes > 0 && ageMinutes > settings.MaxDataAgeMinutes)
+			{
+				result.Detail = string.Format("VIX data is {0:N0} minutes old - the index is closed, so it cannot confirm.", ageMinutes);
 				return result;
 			}
 
@@ -184,6 +203,13 @@ namespace Socrates.Market
 
 		/// <summary>Strength assigned when the count clears MinAligned but not by much.</summary>
 		public double WeakSignalStrength = 0.6;
+
+		/// <summary>
+		/// How old a component's last bar may be and still count as participating. The
+		/// leaders trade regular hours, so overnight their closing prices would otherwise
+		/// keep voting on trades taken hours later.
+		/// </summary>
+		public double MaxDataAgeMinutes = 15;
 	}
 
 	/// <summary>
@@ -198,6 +224,7 @@ namespace Socrates.Market
 		private readonly double[] last;
 		private readonly double[] reference;
 		private readonly bool[] hasData;
+		private readonly DateTime[] updated;
 
 		public BreadthConfirmation(BreadthConfirmationSettings settings, string[] componentNames)
 		{
@@ -211,6 +238,7 @@ namespace Socrates.Market
 			this.last = new double[componentNames.Length];
 			this.reference = new double[componentNames.Length];
 			this.hasData = new bool[componentNames.Length];
+			this.updated = new DateTime[componentNames.Length];
 		}
 
 		public int ComponentCount { get { return names.Length; } }
@@ -219,7 +247,7 @@ namespace Socrates.Market
 		/// Update one component. referenceValue is its session open or its price a lookback
 		/// ago, depending on the configured measure.
 		/// </summary>
-		public void SetComponent(int index, double lastPrice, double referenceValue)
+		public void SetComponent(int index, double lastPrice, double referenceValue, DateTime time)
 		{
 			if (index < 0 || index >= names.Length)
 				return;
@@ -229,6 +257,7 @@ namespace Socrates.Market
 
 			last[index] = lastPrice;
 			reference[index] = referenceValue;
+			updated[index] = time;
 			hasData[index] = true;
 		}
 
@@ -238,7 +267,7 @@ namespace Socrates.Market
 				hasData[i] = false;
 		}
 
-		public ConfirmationResult Evaluate(TradeDirection direction)
+		public ConfirmationResult Evaluate(TradeDirection direction, DateTime now)
 		{
 			if (settings.Mode == ConfirmationMode.Off)
 				return ConfirmationResult.Pass("Breadth confirmation disabled.");
@@ -247,12 +276,20 @@ namespace Socrates.Market
 
 			int available = 0;
 			int aligned = 0;
+			int stale = 0;
 			double netPercent = 0;
 
 			for (int i = 0; i < names.Length; i++)
 			{
 				if (!hasData[i])
 					continue;
+
+				if (settings.MaxDataAgeMinutes > 0
+					&& (now - updated[i]).TotalMinutes > settings.MaxDataAgeMinutes)
+				{
+					stale++;
+					continue;
+				}
 
 				available++;
 				double changePercent = ((last[i] - reference[i]) / reference[i]) * 100.0;
@@ -269,7 +306,9 @@ namespace Socrates.Market
 
 			if (available == 0)
 			{
-				result.Detail = "No leader data available for this bar.";
+				result.Detail = stale > 0
+					? string.Format("All {0} leaders are stale - the equity market is closed, so they cannot confirm.", stale)
+					: "No leader data available for this bar.";
 				return result;
 			}
 

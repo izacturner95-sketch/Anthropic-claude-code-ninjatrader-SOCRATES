@@ -92,8 +92,15 @@ writes the reason to the Log tab, prints nothing, and trades nothing. A futures-
 feed carries none of the eight index and equity symbols. Turn each step on once you
 have confirmed its symbols open on a chart.
 
+**Trading hours** defaults to Extended — 18:00 to 16:45 ET, the full Globex session,
+flat by 16:55. Regular is 09:45–15:45; Custom takes the three HHmmss times, and may wrap
+midnight.
+
 Because the VIX index and the equities trade regular hours only, running either
-confirmation makes this a 09:30–16:00 ET strategy.
+confirmation on extended hours means neither can confirm overnight. Both refuse stale
+data rather than agreeing with a price from hours earlier, so overnight setups are
+vetoed rather than taken on bad evidence. Enabling step 5 or 6 effectively puts you back
+on a 09:30–16:00 ET strategy, and the banner says so at startup.
 
 The prior-day and prior-week levels need history: three weeks of loaded data before
 weekly pivots exist. Short loads are not fatal — the missing levels are skipped, a

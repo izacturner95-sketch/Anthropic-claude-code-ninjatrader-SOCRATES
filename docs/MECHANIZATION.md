@@ -294,7 +294,7 @@ as roughly that many points.
 | `Order block displacement (ATR)` | 1.0 | Same test, plus an imbalance |
 | `Order block origin lookback` | 10 | 50 minutes back to find the opposing candle |
 | `Opening range (minutes)` | 15 | Completes at 09:45 |
-| `Session start` | 09:45 | Deliberately the moment the opening range completes |
+| `Trading hours` | Extended | 18:00-16:45 ET, the whole Globex session |
 
 Longest possible setup lifetime is 6 + 12 + 15 = 33 bars, just under 3 hours, which
 fits inside the 09:45–15:45 entry window.

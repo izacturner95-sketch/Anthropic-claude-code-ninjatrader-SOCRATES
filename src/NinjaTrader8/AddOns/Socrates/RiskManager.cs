@@ -11,6 +11,23 @@ using System;
 
 namespace Socrates.Risk
 {
+	/// <summary>
+	/// Which part of the trading day entries are allowed in. The presets exist because a
+	/// window that wraps midnight is easy to enter wrongly by hand, and getting it wrong
+	/// fails silently - every setup outside it is simply refused.
+	/// </summary>
+	public enum TradingHoursMode
+	{
+		/// <summary>09:45 to 15:45 ET, flat by 15:55. The cash session only.</summary>
+		RegularHours,
+
+		/// <summary>18:00 to 16:45 ET, flat by 16:55. The full Globex session, wrapping midnight.</summary>
+		ExtendedHours,
+
+		/// <summary>Use the session start, end and flatten times exactly as entered.</summary>
+		Custom
+	}
+
 	public sealed class RiskManagerSettings
 	{
 		/// <summary>Earliest time of day a new entry may be opened.</summary>
@@ -182,17 +199,25 @@ namespace Socrates.Risk
 		}
 
 		/// <summary>
-		/// True once the flatten time has passed. The strategy should close any open
-		/// position unconditionally when this returns true.
+		/// True while the strategy should hold no position: from the flatten time until the
+		/// next session start.
+		///
+		/// This was a bare `timeOfDay >= FlattenTime`, which is only right for a window that
+		/// ends in the evening and does not reopen. On a session running 18:00 to 16:45 it
+		/// was true from 16:55 through to midnight and past it, so the overnight half of the
+		/// session was permanently in its own flatten period and could never trade.
 		/// </summary>
 		public bool ShouldFlatten(int timeOfDay)
 		{
-			return timeOfDay >= settings.FlattenTime;
+			if (settings.FlattenTime == settings.SessionStartTime)
+				return false;
+
+			return IsInWindow(timeOfDay, settings.FlattenTime, settings.SessionStartTime);
 		}
 
 		/// <summary>
 		/// Handles both same-day windows (09:30 to 15:50) and windows that wrap
-		/// across midnight (e.g. 18:00 to 04:00 for the overnight session).
+		/// across midnight (e.g. 18:00 to 16:45 for the full Globex session).
 		/// </summary>
 		private bool IsWithinSession(int timeOfDay)
 		{
@@ -206,6 +231,18 @@ namespace Socrates.Risk
 				return timeOfDay >= start && timeOfDay <= end;
 
 			return timeOfDay >= start || timeOfDay <= end;
+		}
+
+		/// <summary>Half-open [start, end), wrapping midnight when start is after end.</summary>
+		private static bool IsInWindow(int timeOfDay, int start, int end)
+		{
+			if (start == end)
+				return false;
+
+			if (start < end)
+				return timeOfDay >= start && timeOfDay < end;
+
+			return timeOfDay >= start || timeOfDay < end;
 		}
 	}
 }

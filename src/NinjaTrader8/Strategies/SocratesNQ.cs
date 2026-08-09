@@ -52,6 +52,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double[] breadthSessionOpen = new double[0];
 
 		// --- Session tracking ---
+		private int effectiveSessionStart;
+		private int effectiveSessionEnd;
+		private int effectiveFlatten;
 		private DateTime currentSessionDate = DateTime.MinValue;
 		private double overnightHigh = double.MinValue;
 		private double overnightLow = double.MaxValue;
@@ -157,6 +160,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 				UseConfidenceSizing = false;
 
 				// --- Risk ---
+				//
+				// Extended hours by default. On a 24-hour Globex chart the cash window is
+				// about a quarter of the bars, and the last run refused 10 of 14 completed
+				// setups as OutsideSession - the sequence was finding trades all night and
+				// then declining them.
+				TradingHours = TradingHoursMode.ExtendedHours;
+
+				// Only read when Trading hours is Custom; the presets supply their own.
 				SessionStartTime = 94500;
 				SessionEndTime = 154500;
 				FlattenTime = 155500;
@@ -264,11 +275,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 					MaxContracts = MaxContracts
 				};
 
+				ResolveTradingHours();
+
 				riskSettings = new RiskManagerSettings
 				{
-					SessionStartTime = SessionStartTime,
-					SessionEndTime = SessionEndTime,
-					FlattenTime = FlattenTime,
+					SessionStartTime = effectiveSessionStart,
+					SessionEndTime = effectiveSessionEnd,
+					FlattenTime = effectiveFlatten,
 					MaxDailyLossDollars = MaxDailyLossDollars,
 					DailyProfitTargetDollars = DailyProfitTargetDollars,
 					StopForDayOnProfitTarget = StopForDayOnProfitTarget,
@@ -367,7 +380,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 					{
 						Mode = VixMode,
 						MinDirectionalMove = VixMinDirectionalMove,
-						KeyLevelTolerance = VixKeyLevelTolerance
+						KeyLevelTolerance = VixKeyLevelTolerance,
+						MaxDataAgeMinutes = VixBarMinutes * 3
 					}, new MarketAnalyzer(vixSettings));
 				}
 
@@ -391,7 +405,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 						{
 							Mode = BreadthMode,
 							MinAligned = BreadthMinAligned,
-							MinMovePercent = BreadthMinMovePercent
+							MinMovePercent = BreadthMinMovePercent,
+							MaxDataAgeMinutes = BreadthBarMinutes * 3
 						}, breadthSymbols);
 					}
 				}
@@ -530,7 +545,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				if (Position.MarketPosition != MarketPosition.Flat && !flattenedForDay)
 				{
-					Log(string.Format("Flatten time {0:000000} reached - closing position.", FlattenTime));
+					Log(string.Format("Flatten time {0:000000} reached - closing position.", effectiveFlatten));
 					CloseCurrentPosition();
 					flattenedForDay = true;
 				}
@@ -628,7 +643,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// Step 5.
 			if (vix != null)
 			{
-				ConfirmationResult vixResult = vix.Evaluate(result.Direction);
+				ConfirmationResult vixResult = vix.Evaluate(result.Direction, Time[0]);
 
 				if (!vixResult.Agrees)
 				{
@@ -647,7 +662,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// Step 6.
 			if (breadth != null)
 			{
-				ConfirmationResult breadthResult = breadth.Evaluate(result.Direction);
+				ConfirmationResult breadthResult = breadth.Evaluate(result.Direction, Time[0]);
 
 				if (!breadthResult.Agrees)
 				{
@@ -692,7 +707,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				breadthSessionOpen[component] = Opens[series][0];
 
 			if (breadthSessionOpen[component] > 0)
-				breadth.SetComponent(component, Closes[series][0], breadthSessionOpen[component]);
+				breadth.SetComponent(component, Closes[series][0], breadthSessionOpen[component], Times[series][0]);
 		}
 
 		#endregion
@@ -1127,7 +1142,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print("=== Socrates NQ ===================================================");
 			Print(string.Format("  Instrument      : {0}", Instrument != null ? Instrument.FullName : "unknown"));
 			Print(string.Format("  Calculate       : {0}, bars required {1}", Calculate, BarsRequiredToTrade));
-			Print(string.Format("  Entry window    : {0:000000}-{1:000000}, flatten {2:000000}", SessionStartTime, SessionEndTime, FlattenTime));
+			Print(string.Format("  Trading hours   : {0}", DescribeSession()));
 			Print(string.Format("  Sizing          : {0} contract(s), max {1}, daily loss cap {2:C}", FixedContracts, MaxContracts, MaxDailyLossDollars));
 			Print(string.Format("  Stop            : {0}", DescribeStop()));
 			Print(string.Format("  Step 5 (VIX)    : {0}{1}", VixMode, VixMode == ConfirmationMode.Off ? string.Empty : " on " + VixSymbol));
@@ -1152,6 +1167,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			LogRiskConsistency();
+
+			// The VIX index and the leaders trade regular hours. Their readings are held
+			// between bars, so outside 09:30-16:00 they would confirm against a price from
+			// hours ago - the confirmations now refuse stale data rather than agreeing with
+			// it, which means these steps veto everything overnight instead of helping.
+			if (TradingHours == TradingHoursMode.ExtendedHours
+				&& (VixMode != ConfirmationMode.Off || BreadthMode != ConfirmationMode.Off))
+			{
+				Print("  WARNING: extended hours with step 5 or 6 on. Both sources close at 16:00 ET and");
+				Print("           will refuse to confirm outside it, so overnight setups cannot be taken.");
+			}
 
 			// NinjaTrader keeps the parameter values you configured on an instance, so a
 			// changed default does not reach a strategy that already exists on a chart or in
@@ -1203,6 +1229,43 @@ namespace NinjaTrader.NinjaScript.Strategies
 				"           Raise the cap to {0:C}, switch to MNQ (Tick value 0.50), or lower the stop to {1} ticks.",
 				worstCase,
 				(int)Math.Floor(MaxDailyLossDollars / (TickValueDollars * contracts * MaxConsecutiveLosses))));
+		}
+
+		/// <summary>
+		/// Turns the trading-hours preset into the three times the risk manager works with.
+		/// Custom passes the entered values straight through.
+		/// </summary>
+		private void ResolveTradingHours()
+		{
+			switch (TradingHours)
+			{
+				case TradingHoursMode.RegularHours:
+					effectiveSessionStart = 94500;
+					effectiveSessionEnd = 154500;
+					effectiveFlatten = 155500;
+					break;
+
+				case TradingHoursMode.ExtendedHours:
+					// The Globex day opens at 18:00 ET and runs to the 17:00 halt. Entries
+					// stop at 16:45 and the position is closed by 16:55, ahead of both the
+					// halt and NinjaTrader's own exit-on-session-close.
+					effectiveSessionStart = 180000;
+					effectiveSessionEnd = 164500;
+					effectiveFlatten = 165500;
+					break;
+
+				default:
+					effectiveSessionStart = SessionStartTime;
+					effectiveSessionEnd = SessionEndTime;
+					effectiveFlatten = FlattenTime;
+					break;
+			}
+		}
+
+		private string DescribeSession()
+		{
+			return string.Format("{0}, entries {1:000000}-{2:000000}, flat by {3:000000}",
+				TradingHours, effectiveSessionStart, effectiveSessionEnd, effectiveFlatten);
 		}
 
 		private string DescribeStop()
@@ -1432,42 +1495,46 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public bool UseConfidenceSizing { get; set; }
 
 		[NinjaScriptProperty]
+		[Display(Name = "Trading hours", Description = "Regular = 09:45-15:45 ET. Extended = 18:00-16:45 ET, the full Globex session. Custom uses the three times below; they are ignored otherwise.", GroupName = "2. Risk", Order = 0)]
+		public TradingHoursMode TradingHours { get; set; }
+
+		[NinjaScriptProperty]
 		[Range(0, 235959)]
-		[Display(Name = "Session start (HHmmss)", GroupName = "2. Risk", Order = 0)]
+		[Display(Name = "Session start (HHmmss)", Description = "Custom only. May be later than the end time, for a window that wraps midnight.", GroupName = "2. Risk", Order = 1)]
 		public int SessionStartTime { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, 235959)]
-		[Display(Name = "Session end (HHmmss)", GroupName = "2. Risk", Order = 1)]
+		[Display(Name = "Session end (HHmmss)", Description = "Custom only.", GroupName = "2. Risk", Order = 2)]
 		public int SessionEndTime { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, 235959)]
-		[Display(Name = "Flatten time (HHmmss)", GroupName = "2. Risk", Order = 2)]
+		[Display(Name = "Flatten time (HHmmss)", Description = "Custom only. Positions are closed from here until the next session start.", GroupName = "2. Risk", Order = 3)]
 		public int FlattenTime { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, double.MaxValue)]
-		[Display(Name = "Max daily loss ($)", GroupName = "2. Risk", Order = 3)]
+		[Display(Name = "Max daily loss ($)", GroupName = "2. Risk", Order = 4)]
 		public double MaxDailyLossDollars { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, double.MaxValue)]
-		[Display(Name = "Daily profit target ($)", GroupName = "2. Risk", Order = 4)]
+		[Display(Name = "Daily profit target ($)", GroupName = "2. Risk", Order = 5)]
 		public double DailyProfitTargetDollars { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Stop for day on profit target", GroupName = "2. Risk", Order = 5)]
+		[Display(Name = "Stop for day on profit target", GroupName = "2. Risk", Order = 6)]
 		public bool StopForDayOnProfitTarget { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, int.MaxValue)]
-		[Display(Name = "Max trades per day", Description = "0 disables.", GroupName = "2. Risk", Order = 6)]
+		[Display(Name = "Max trades per day", Description = "0 disables.", GroupName = "2. Risk", Order = 7)]
 		public int MaxTradesPerDay { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, int.MaxValue)]
-		[Display(Name = "Max consecutive losses", Description = "0 disables.", GroupName = "2. Risk", Order = 7)]
+		[Display(Name = "Max consecutive losses", Description = "0 disables.", GroupName = "2. Risk", Order = 8)]
 		public int MaxConsecutiveLosses { get; set; }
 
 		[NinjaScriptProperty]
