@@ -43,11 +43,27 @@ namespace Socrates.Market
 		public int MaxBarsShiftToRetest = 15;
 
 		/// <summary>
-		/// Re-anchor the structure reference to the first swing formed after the sweep, when
-		/// one exists. Produces earlier, more frequent shifts. When false, the shift must break
-		/// the swing that preceded the sweep, which is stricter and slower.
+		/// Anchor the structure reference to the first swing formed after the sweep. When
+		/// false, the shift must break the swing that preceded the sweep instead.
+		///
+		/// These are not two speeds of the same test, which is how this was originally
+		/// written. The pre-sweep swing is the origin of the entire leg that ended in the
+		/// sweep, so breaking it means a full retracement and the stop - pinned beyond the
+		/// swept extreme - spans that leg end to end. The post-sweep swing is a local high
+		/// or low made while price is turning, a few bars and a fraction of the range away.
+		///
+		/// So when this is on, a setup waits for the near swing rather than falling back to
+		/// the far one. Falling back was silently converting every setup into the strictest,
+		/// widest-stop version of itself.
 		/// </summary>
 		public bool UsePostSweepSwing = true;
+
+		/// <summary>
+		/// Reject a setup whose structure reference sits further than this many ATRs from the
+		/// swept extreme. That distance is the trade's risk, so this is a ceiling on risk
+		/// expressed in the units that produced it. Zero disables.
+		/// </summary>
+		public double MaxSetupRiskAtr = 2.5;
 
 		/// <summary>Minimum range of the bar that breaks structure, as a multiple of ATR. This is the "strong displacement" test. Zero disables it.</summary>
 		public double MinDisplacementAtr = 1.0;
@@ -96,6 +112,7 @@ namespace Socrates.Market
 		private double zoneCenter;
 		private double zoneHalfWidth;
 		private bool zoneTouched;
+		private int discardedTooWide;
 
 		public SetupEngine(SetupEngineSettings settings)
 		{
@@ -110,6 +127,9 @@ namespace Socrates.Market
 
 		/// <summary>True once price has traded into the retest zone of the current setup. Exposed so the strategy can count how far setups get.</summary>
 		public bool ZoneTouched { get { return zoneTouched; } }
+
+		/// <summary>Running count of setups abandoned because the structure was too far from the swept extreme to trade against.</summary>
+		public int DiscardedTooWide { get { return discardedTooWide; } }
 
 		public string LastTransition { get; private set; }
 
@@ -163,15 +183,20 @@ namespace Socrates.Market
 					return result;
 				}
 
-				// Prefer a swing formed since the sweep - it is nearer and gives an earlier signal.
+				// Use the swing formed since the sweep - it is nearer, gives an earlier signal,
+				// and keeps the resulting stop proportional to the move being traded. If none
+				// has formed yet, wait for one. The pre-sweep swing is not a substitute; see
+				// the note on UsePostSweepSwing.
 				if (settings.UsePostSweepSwing)
 				{
 					SwingPoint post = sweep.Side == SweepSide.SellSide
 						? analyzer.Swings.MostRecentHighAfter(sweep.ExtremeBarIndex)
 						: analyzer.Swings.MostRecentLowAfter(sweep.ExtremeBarIndex);
 
-					if (post.IsValid)
-						structureReference = post;
+					if (!post.IsValid)
+						return result;
+
+					structureReference = post;
 				}
 
 				if (!structureReference.IsValid)
@@ -183,6 +208,21 @@ namespace Socrates.Market
 
 				if (!broke)
 					return result;
+
+				// The gap between the structure being broken and the swept extreme is the
+				// trade's risk, fixed before entry is even considered. Checked here so a
+				// hopeless setup is abandoned at the shift rather than carried to the retest
+				// and rejected on stop size, which reads as a sizing problem and is not one.
+				double setupRisk = Math.Abs(structureReference.Price - sweep.ExtremePrice);
+
+				if (settings.MaxSetupRiskAtr > 0 && setupRisk > atr * settings.MaxSetupRiskAtr)
+				{
+					discardedTooWide++;
+					Reset(string.Format(
+						"Structure at {0:N2} is {1:N2} pts from the swept extreme, over the {2:N2} allowed ({3:N1} ATR). Setup discarded.",
+						structureReference.Price, setupRisk, atr * settings.MaxSetupRiskAtr, settings.MaxSetupRiskAtr));
+					return result;
+				}
 
 				if (settings.MinDisplacementAtr > 0 && (high - low) < atr * settings.MinDisplacementAtr)
 				{

@@ -114,20 +114,40 @@ swing high**. Mirror image for the bearish case.
 The reference swing is chosen one of two ways:
 
 - `Use post-sweep swing = true` (default): the first swing high to form *after* the
-  sweep low. Nearer, so shifts trigger earlier and more often.
-- `false`: the swing high that existed *before* the sweep. Stricter and slower.
+  sweep low. A local high made while price is turning — near the sweep, so the stop
+  that follows from it is small.
+- `false`: the swing high that existed *before* the sweep. This is the origin of the
+  entire leg that ended in the sweep, so breaking it means a full retracement.
+
+**These are not two speeds of the same test**, which is how they were first written and
+implemented. The stop is pinned beyond the swept extreme, so the reference swing sets
+the trade's risk: the post-sweep swing gives a stop of about an ATR, the pre-sweep swing
+gives one spanning the whole prior leg. The original code, when no post-sweep swing had
+formed yet, quietly fell back to the pre-sweep one — so every setup became the widest
+version of itself. Measured over a 47-day sample, stops ran 89 to 240 points. It now
+waits for the near swing instead.
+
+Two consequences of that fix:
+
+- The bar budget rose from 12 to 20, because a swing needs `(2 × strength) + 1` = 7 bars
+  to confirm and then has to be broken, which 12 bars rarely allowed.
+- A ceiling was added on the distance itself: `Max setup risk (ATR)`, default 2.5. If
+  the structure sits further than that from the swept extreme, the setup is discarded at
+  the shift rather than carried to the retest and rejected on stop size — which reads as
+  a sizing problem and is not one.
 
 **"Strong displacement"** became: the bar that breaks structure must have a range of at
 least 1.0 × ATR. If structure breaks on a weak bar, the setup is **not** discarded — it
 waits for a stronger break, up to the timeout.
 
-If no shift occurs within 12 bars of the sweep, the whole setup resets.
+If no shift occurs within 20 bars of the sweep, the whole setup resets.
 
 | Decision I made | Parameter | Needs your sign-off |
 |---|---|---|
 | Displacement = bar range ≥ 1.0 × ATR | `Min displacement (ATR)` | Would you rather measure the whole leg from the sweep extreme, or require a fair-value gap? |
 | Shift = **close** beyond the swing | — | Or should a wick through it count? |
-| 12-bar budget from sweep to shift | `Max bars sweep to shift` | |
+| 20-bar budget from sweep to shift | `Max bars sweep to shift` | |
+| Risk ceiling of 2.5 × ATR from structure to swept extreme | `Max setup risk (ATR)` | This is the main thing standing between the strategy and very wide stops. Is 2.5 ATR the risk you would accept per trade? |
 
 "Higher low after a sell-side sweep" is implied rather than tested separately: if price
 takes out a low, then closes above a subsequent swing high, a higher low necessarily

@@ -182,9 +182,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 				MaxBarsToReclaim = 6;
 
 				// --- Step 3: structure ---
-				MaxBarsSweepToShift = 12;
+				//
+				// A post-sweep swing needs (2 x SwingStrength) + 1 bars to confirm, so the
+				// budget has to leave room for one to form and then be broken. At 12 bars it
+				// mostly did not, which is how every setup ended up anchored to the pre-sweep
+				// swing instead.
+				MaxBarsSweepToShift = 20;
 				UsePostSweepSwing = true;
 				MinDisplacementAtr = 1.0;
+				MaxSetupRiskAtr = 2.5;
 
 				// --- Step 4: retest ---
 				MaxBarsShiftToRetest = 15;
@@ -294,6 +300,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					MaxBarsShiftToRetest = MaxBarsShiftToRetest,
 					UsePostSweepSwing = UsePostSweepSwing,
 					MinDisplacementAtr = MinDisplacementAtr,
+					MaxSetupRiskAtr = MaxSetupRiskAtr,
 					ZoneMode = ZoneMode,
 					RetestZoneAtr = RetestZoneAtr,
 					RequireConfirmationClose = RequireConfirmationClose,
@@ -1216,6 +1223,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Bars evaluated       : {0}", barsProcessed));
 			Print(string.Format("  Sweeps (step 2)      : {0}", totalSweeps));
 			Print(string.Format("  Structure shifts (3) : {0}", totalShifts));
+			Print(string.Format("      discarded, too wide: {0}", setup != null ? setup.DiscardedTooWide : 0));
 			Print(string.Format("  Retests reached (4)  : {0}", totalZoneTouches));
 			Print(string.Format("  Setups completed     : {0}", completedSetups));
 			Print(string.Format("  Entries submitted    : {0}", totalEntries));
@@ -1288,7 +1296,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			if (wouldPass == 0)
+			{
 				Print("  NOTE: the band does not overlap the distribution at all - no setup can ever pass it.");
+				Print(string.Format("        Widening the band to admit these means risking {0:C} a contract at the top end.",
+					stopTicksMax * TickValueDollars));
+				Print("        If that is more than the trade is worth, the setups are wrong, not the band -");
+				Print("        check 'Max setup risk (ATR)' and 'Use post-sweep swing'.");
+			}
 		}
 
 		#endregion
@@ -1443,8 +1457,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public int MaxBarsSweepToShift { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use post-sweep swing", Description = "Break the swing formed after the sweep rather than the one before it. Faster, more signals.", GroupName = "5. Step 3 - Structure", Order = 1)]
+		[Display(Name = "Use post-sweep swing", Description = "Break the swing formed after the sweep. Off breaks the swing that preceded it instead, which means retracing the whole prior leg and a stop that spans it.", GroupName = "5. Step 3 - Structure", Order = 1)]
 		public bool UsePostSweepSwing { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 50)]
+		[Display(Name = "Max setup risk (ATR)", Description = "Discard a setup whose structure sits further than this from the swept extreme - that distance is the trade's risk. 0 disables.", GroupName = "5. Step 3 - Structure", Order = 3)]
+		public double MaxSetupRiskAtr { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, 10)]
