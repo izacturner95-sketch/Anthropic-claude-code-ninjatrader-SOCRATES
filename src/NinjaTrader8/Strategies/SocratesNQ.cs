@@ -157,9 +157,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		// A stop is supposed to cap a loss at 1R. Anything worse means price left the stop
 		// behind - a gap, or a bar that opened through it - and that is not visible in a mean.
+		// A stop-out lands slightly past -1R once slippage is paid, so a band boundary at
+		// exactly -1R sweeps every ordinary loss into the band above it. The first cut of
+		// this put 20 of 43 trades in "-2R to -1R" while separately reporting 3 stops that
+		// did not hold - both true, and together badly misleading. Normal stop-outs get
+		// their own band.
 		private static readonly string[] RBucketLabels =
 		{
-			"worse than -3R", "-3R to -2R", "-2R to -1R", "-1R to 0",
+			"worse than -2R", "-2R to -1R (overrun)", "stopped out, ~-1R", "-1R to 0 (cut early)",
 			"0 to +1R", "+1R to +2R", "+2R to +3R", "+3R to +5R", "better than +5R"
 		};
 
@@ -1611,9 +1616,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private static int RBucketFor(double r)
 		{
-			if (r < -3) return 0;
-			if (r < -2) return 1;
-			if (r < -1) return 2;
+			if (r < -2) return 0;
+			if (r < -1.05) return 1;
+			if (r <= -0.95) return 2;
 			if (r < 0) return 3;
 			if (r < 1) return 4;
 			if (r < 2) return 5;
