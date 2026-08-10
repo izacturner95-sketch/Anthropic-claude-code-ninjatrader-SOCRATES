@@ -322,6 +322,18 @@ namespace Socrates.Market
 		private readonly bool[] hasData;
 		private readonly DateTime[] updated;
 
+		// Same reasoning as the VIX counters: a step that turns down everything it looks at
+		// is either genuinely selective or mis-calibrated, and one count cannot tell those
+		// apart. How many leaders were available, how many agreed, and how many were needed
+		// is what separates them.
+		private int evaluations;
+		private int confirmedCount;
+		private int rejectedNotAligned;
+		private int rejectedNoDataCount;
+		private int alignedSum;
+		private int availableSum;
+		private int requiredSum;
+
 		public BreadthConfirmation(BreadthConfirmationSettings settings, string[] componentNames)
 		{
 			if (settings == null)
@@ -338,6 +350,17 @@ namespace Socrates.Market
 		}
 
 		public int ComponentCount { get { return names.Length; } }
+
+		/// <summary>Setups where the leaders were open and the step actually ran.</summary>
+		public int Evaluations { get { return evaluations; } }
+
+		public int Confirmed { get { return confirmedCount; } }
+		public int RejectedNotAligned { get { return rejectedNotAligned; } }
+		public int RejectedNoData { get { return rejectedNoDataCount; } }
+
+		public double MeanAligned { get { return evaluations > 0 ? alignedSum / (double)evaluations : 0; } }
+		public double MeanAvailable { get { return evaluations > 0 ? availableSum / (double)evaluations : 0; } }
+		public double MeanRequired { get { return evaluations > 0 ? requiredSum / (double)evaluations : 0; } }
 
 		/// <summary>
 		/// Update one component. referenceValue is its session open or its price a lookback
@@ -407,6 +430,8 @@ namespace Socrates.Market
 				if (stale > 0 && settings.SkipWhenClosed)
 					return ConfirmationResult.Pass(string.Format("Leaders closed ({0} stale) - step 6 not applicable.", stale));
 
+				rejectedNoDataCount++;
+
 				result.Detail = stale > 0
 					? string.Format("All {0} leaders are stale and skipping is off.", stale)
 					: "No leader data available - check that the symbols exist in your feed.";
@@ -422,8 +447,15 @@ namespace Socrates.Market
 
 			double average = netPercent / available;
 
+			evaluations++;
+			alignedSum += aligned;
+			availableSum += available;
+			requiredSum += required;
+
 			if (aligned < required)
 			{
+				rejectedNotAligned++;
+
 				result.Detail = string.Format("Leaders {0}/{1} aligned with {2}, need {3}. Average {4:+0.00;-0.00}%.",
 					aligned, available, direction, required, average);
 				return result;
@@ -431,6 +463,7 @@ namespace Socrates.Market
 
 			result.Agrees = true;
 			result.AtKeyLevel = true;
+			confirmedCount++;
 
 			// Unanimity is a stronger signal than a bare majority.
 			result.Strength = aligned >= available ? 1.0 : settings.WeakSignalStrength;

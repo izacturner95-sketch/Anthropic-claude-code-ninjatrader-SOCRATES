@@ -1839,6 +1839,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			Print(string.Format("  Step 6 (leaders)     : {0}{1}", totalRejectedBreadth,
 				breadthSkippedClosed > 0 ? string.Format("   ({0} skipped, leaders closed)", breadthSkippedClosed) : string.Empty));
+
+			if (breadth != null && breadth.Evaluations > 0)
+			{
+				Print(string.Format("      evaluated {0}, confirmed {1}, not aligned {2}, no data {3}",
+					breadth.Evaluations, breadth.Confirmed, breadth.RejectedNotAligned, breadth.RejectedNoData));
+				Print(string.Format("      leaders agreeing: mean {0:N1} of {1:N1} available, needed {2:N1}",
+					breadth.MeanAligned, breadth.MeanAvailable, breadth.MeanRequired));
+
+				// A gate that never passes anything it looks at is a gate set beyond what the
+				// data does, not a selective one.
+				if (breadth.Confirmed == 0)
+					Print("      NOTE: nothing it evaluated ever passed. Lower 'Min leaders aligned' before reading anything into this.");
+			}
 			Print(string.Format("  Stop band            : {0}", totalRejectedStop));
 			Print(string.Format("  Sizing               : {0}", totalRejectedSizing));
 			Print(string.Format("  Daily risk budget    : {0}", totalRejectedRiskBudget));
