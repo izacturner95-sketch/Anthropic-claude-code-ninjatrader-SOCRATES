@@ -82,6 +82,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// funnel counters answer the only question that matters when there are no trades:
 		// how far down the six steps did price actually get?
 		private bool firstBarLogged;
+		private DateTime firstBarTime;
+		private DateTime lastBarTime;
 		private bool warmupLogged;
 		private bool dailyContextWarned;
 		private bool weeklyContextWarned;
@@ -562,10 +564,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (BarsInProgress != 0)
 				return;
 
+			lastBarTime = Time[0];
+
 			// Proof of life on the very first bar, before any guard below can swallow it.
 			if (!firstBarLogged)
 			{
 				firstBarLogged = true;
+				firstBarTime = Time[0];
 				Log(string.Format("First bar received at {0:yyyy-MM-dd HH:mm}. Warming up {1} bars before trading.",
 					Time[0], BarsRequiredToTrade));
 			}
@@ -1282,6 +1287,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private void ResetDiagnostics()
 		{
 			firstBarLogged = false;
+			firstBarTime = DateTime.MinValue;
+			lastBarTime = DateTime.MinValue;
 			warmupLogged = false;
 			dailyContextWarned = false;
 			weeklyContextWarned = false;
@@ -1730,6 +1737,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 				+ totalRejectedBreadth + totalRejectedStop + totalRejectedSizing + totalRejectedRiskBudget;
 
 			Print("=== Socrates NQ - run summary =====================================");
+
+			// Printed because these summaries get compared against each other, and a run on a
+			// different bar size or a shorter range looks identical in every other respect.
+			if (firstBarTime > DateTime.MinValue)
+			{
+				Print(string.Format("  Range                : {0:yyyy-MM-dd HH:mm} to {1:yyyy-MM-dd HH:mm}  ({2})",
+					firstBarTime, lastBarTime,
+					BarsArray != null && BarsArray[0] != null ? BarsArray[0].BarsPeriod.ToString() : "unknown period"));
+			}
+
 			Print(string.Format("  Bars evaluated       : {0}", barsProcessed));
 			Print(string.Format("  Sweeps (step 2)      : {0}{1}", totalSweeps,
 				barsProcessed > 0 ? string.Format("  (one per {0:N1} bars)", barsProcessed / (double)Math.Max(1, totalSweeps)) : string.Empty));
