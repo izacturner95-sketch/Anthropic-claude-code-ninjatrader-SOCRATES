@@ -1357,12 +1357,38 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (BarsArray != null)
 			{
+				// A multi-series backtest cannot start before every series has data, so one
+				// short series silently truncates the whole run - which reads as a strategy
+				// that found fewer setups, not as a data problem. The first timestamp of each
+				// series is what identifies the culprit.
+				DateTime latestStart = DateTime.MinValue;
+				string latestStartSeries = null;
+
 				for (int i = 0; i < BarsArray.Length; i++)
 				{
 					int count = BarsArray[i] != null ? BarsArray[i].Count : 0;
+					string from = "-";
 
-					Print(string.Format("    [{0}] {1,-24} {2,7} bars{3}", i, DescribeSeries(i), count,
+					if (count > 0)
+					{
+						DateTime start = BarsArray[i].GetTime(0);
+						from = start.ToString("yyyy-MM-dd");
+
+						if (start > latestStart)
+						{
+							latestStart = start;
+							latestStartSeries = DescribeSeries(i);
+						}
+					}
+
+					Print(string.Format("    [{0}] {1,-24} {2,7} bars from {3}{4}", i, DescribeSeries(i), count, from,
 						count == 0 ? "   <-- EMPTY, this series has no data" : string.Empty));
+				}
+
+				if (latestStartSeries != null && BarsArray.Length > 1)
+				{
+					Print(string.Format("  Backtest cannot begin before {0:yyyy-MM-dd} - that is where '{1}' starts.",
+						latestStart, latestStartSeries));
 				}
 
 				if (idxDaily >= 0 && BarsArray[idxDaily] != null && BarsArray[idxDaily].Count < 2)
@@ -1857,17 +1883,30 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Step 6 (leaders)     : {0}{1}", totalRejectedBreadth,
 				breadthSkippedClosed > 0 ? string.Format("   ({0} skipped, leaders closed)", breadthSkippedClosed) : string.Empty));
 
-			if (breadth != null && breadth.Evaluations > 0)
+			// Deliberately not gated on Evaluations: a step that never got as far as counting
+			// leaders reports zero evaluations, which is exactly the case worth printing.
+			// Gating on it hid the no-data run behind silence for two rounds.
+			if (breadth != null && (breadth.Evaluations > 0 || breadth.RejectedNoData > 0 || breadthSkippedClosed > 0))
 			{
 				Print(string.Format("      evaluated {0}, confirmed {1}, not aligned {2}, no data {3}",
 					breadth.Evaluations, breadth.Confirmed, breadth.RejectedNotAligned, breadth.RejectedNoData));
-				Print(string.Format("      leaders agreeing: mean {0:N1} of {1:N1} available, needed {2:N1}",
-					breadth.MeanAligned, breadth.MeanAvailable, breadth.MeanRequired));
 
-				// A gate that never passes anything it looks at is a gate set beyond what the
-				// data does, not a selective one.
-				if (breadth.Confirmed == 0)
-					Print("      NOTE: nothing it evaluated ever passed. Lower 'Min leaders aligned' before reading anything into this.");
+				if (breadth.Evaluations > 0)
+				{
+					Print(string.Format("      leaders agreeing: mean {0:N1} of {1:N1} available, needed {2:N1}",
+						breadth.MeanAligned, breadth.MeanAvailable, breadth.MeanRequired));
+
+					// A gate that never passes anything it looks at is set beyond what the
+					// data does, not a selective one.
+					if (breadth.Confirmed == 0)
+						Print("      NOTE: nothing it evaluated ever passed. Lower 'Min leaders aligned' before reading anything into this.");
+				}
+
+				if (breadth.RejectedNoData > 0)
+				{
+					Print(string.Format("      NOTE: {0} setups were refused because not one leader had produced a bar.", breadth.RejectedNoData));
+					LogBreadthSeriesCounts();
+				}
 			}
 			Print(string.Format("  Stop band            : {0}", totalRejectedStop));
 			Print(string.Format("  Sizing               : {0}", totalRejectedSizing));
@@ -1892,6 +1931,30 @@ namespace NinjaTrader.NinjaScript.Strategies
 		/// The stop distance every completed setup asked for, against the band that admits
 		/// them. MinStopTicks and MaxStopTicks can be read straight off this.
 		/// </summary>
+		/// <summary>
+		/// Bar count per leader. Which symbols arrived and which did not is the whole question
+		/// when step 6 refuses everything for want of data, and it is not answerable from a
+		/// count of refusals.
+		/// </summary>
+		private void LogBreadthSeriesCounts()
+		{
+			if (idxBreadthStart < 0 || BarsArray == null)
+				return;
+
+			for (int i = 0; i < breadthSymbols.Length; i++)
+			{
+				int series = idxBreadthStart + i;
+
+				if (series >= BarsArray.Length)
+					break;
+
+				int count = BarsArray[series] != null ? BarsArray[series].Count : 0;
+
+				Print(string.Format("            {0,-8} {1,7} bars{2}", breadthSymbols[i], count,
+					count == 0 ? "   <-- nothing loaded" : string.Empty));
+			}
+		}
+
 		private void LogStopDistribution()
 		{
 			if (stopSamples == 0)
