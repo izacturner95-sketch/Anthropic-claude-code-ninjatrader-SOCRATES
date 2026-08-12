@@ -173,7 +173,56 @@ the stops are too wide or `Min reward:risk` is set too high.
 hard — requiring the structure-breaking bar to span a full ATR is demanding on a
 5-minute chart.
 
-## 8. Before going live
+## 8. Importing your own data
+
+NinjaTrader's own feed carries no US equities, so step 6 has nothing to read unless you
+supply it. `tools/to_ninjatrader_csv.py` converts most OHLCV exports into the format the
+importer accepts.
+
+```
+python3 tools/to_ninjatrader_csv.py AAPL_5min.csv --period 5 --stamp open > AAPL.txt
+```
+
+Then **Tools → Historical Data → Import**, pick the file, and select the instrument and
+bar type in the dialog.
+
+The output format is semicolon-delimited with no header:
+
+```
+20260102 093500;185.5;185.75;185.2;185.6;120500     intraday
+20260102;185.5;187.75;184.2;186.6;52000000          daily (--period 0)
+```
+
+Three details decide whether an import lands correctly or quietly puts bars in the wrong
+place. The converter handles all three, but you have to tell it which case you are in:
+
+- **NinjaTrader stamps a bar with the time it closes.** A 5-minute bar covering
+  09:30–09:34 is stamped 09:35. Most sources stamp the open instead, which shifts every
+  bar by one period. Pass `--stamp open` when that is what you have; it is the common
+  case and the default is deliberately the other way so you have to look.
+- **Timestamps must be in the exchange's time zone** — Eastern for US equities. Use
+  `--shift-minutes -300` to move a UTC source to ET, or `-240` during daylight time.
+  Getting this wrong puts your equity bars in the wrong session entirely.
+- **Rows must ascend with no duplicates.** The importer does not sort. The converter
+  refuses out-of-order input rather than writing a file that imports badly, and drops
+  exact duplicate timestamps.
+
+It also rejects rows where the open or close sits outside the high–low range, which is
+the usual sign of a mangled export.
+
+### What to import
+
+Step 6 reads each leader at `Leader bar minutes` (5 by default), so 5-minute bars over
+the range you intend to test. Free intraday equity history is harder to come by than
+daily — if you can only get daily, raise `Leader bar minutes` to 1440 and understand that
+the question changes from "is this leader participating right now" to "was it up
+yesterday", which is a different signal and worth judging on its own.
+
+Whatever you import must cover the **whole** backtest range. A multi-series backtest
+cannot start before its shortest series, so a leader beginning in August truncates
+everything to August — the banner names the series responsible.
+
+## 9. Before going live
 
 In order, no skipping:
 

@@ -72,6 +72,8 @@ docs/
   MECHANIZATION.md         How the written rules became arithmetic
   STRATEGY_SPEC.md         Template for defining trade logic
   SETUP.md                 Installing and running it in NinjaTrader
+tools/
+  to_ninjatrader_csv.py    Convert OHLCV exports into NinjaTrader import format
 ```
 
 The engine classes are plain C# with no NinjaTrader dependencies. Only
