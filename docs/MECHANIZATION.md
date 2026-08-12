@@ -98,6 +98,33 @@ level — that is the pool price actually reached for.
 | Min penetration 0.25 × ATR or 2 pts | `Min penetration (ATR)` / `(points)` | Started at 0.10 ATR / 1 pt and fired every four bars. Too small catches noise; too large misses shallow raids. |
 | Reclaim = **close** back inside, not just a wick | — | Say if a wick back inside should count. |
 
+### Continuations
+
+A candidate that never reclaims was previously discarded — "this was a genuine break, so
+stand aside", which is correct for a reversal strategy and also meant every break through
+a level went in the bin unexamined. With `Trade continuations` on, that break is reported
+instead, and traded **with** the move rather than against it:
+
+- Price goes beyond a level by the same minimum penetration, and does **not** close back
+  through it within `Max bars to reclaim`.
+- The level is expected to flip role. Entry is on the retest of it from the other side,
+  using the same zone, confirmation close, stop and target logic as a reversal.
+- There is no structure-shift step. The break through the level **is** the structural
+  event, so a continuation goes straight from break to retest.
+- It invalidates differently too: a reversal dies if price trades back through the swept
+  extreme, but on a continuation that extreme is in the trade's favour. A continuation
+  dies when price closes back through the level it broke.
+
+Reversal and continuation entries carry separate labels (`sweepLong` / `contLong`) and
+are counted separately in the run summary, because they are different trades and blending
+them into one expectancy would hide either one failing.
+
+| Decision I made | Parameter | Needs your sign-off |
+|---|---|---|
+| A break is a non-reclaim within the same window | `Max bars to reclaim` | The same number decides both, which couples them. Say if a break should need longer to confirm. |
+| Retest zone = the broken level itself | — | Or would you enter on a break of the retest's high instead? |
+| Reversals take priority when both fire on one bar | — | |
+
 ---
 
 ## Step 3 — Structure shift

@@ -270,6 +270,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				MinPenetrationPoints = 2.0;
 				MaxBarsToReclaim = 6;
 
+				// Trade breaks through a level as well as reversals off one. The detector was
+				// already finding these and discarding them.
+				EnableContinuations = true;
+
 				// --- Step 3: structure ---
 				//
 				// A post-sweep swing needs (2 x SwingStrength) + 1 bars to confirm, so the
@@ -279,7 +283,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 				MaxBarsSweepToShift = 20;
 				UsePostSweepSwing = true;
 				MinDisplacementAtr = 1.0;
+				// The trade's real risk, entry to stop. Checked at entry.
 				MaxSetupRiskAtr = 2.5;
+
+				// A coherence test on the setup, not a risk test - the stop stopped coming from
+				// the swept extreme when it moved to the retest pullback, so this distance no
+				// longer sets the risk. At 2.5 it was discarding 573 of 819 structure breaks.
+				MaxStructureDistanceAtr = 5.0;
 
 				// --- Step 4: retest ---
 				MaxBarsShiftToRetest = 15;
@@ -390,7 +400,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 					{
 						MinPenetrationAtr = MinPenetrationAtr,
 						MinPenetrationPoints = MinPenetrationPoints,
-						MaxBarsToReclaim = MaxBarsToReclaim
+						MaxBarsToReclaim = MaxBarsToReclaim,
+						EmitContinuations = EnableContinuations
 					},
 					OrderBlocks = new OrderBlockSettings
 					{
@@ -412,6 +423,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					UsePostSweepSwing = UsePostSweepSwing,
 					MinDisplacementAtr = MinDisplacementAtr,
 					MaxSetupRiskAtr = MaxSetupRiskAtr,
+					MaxStructureDistanceAtr = MaxStructureDistanceAtr,
 					ZoneMode = ZoneMode,
 					RetestZoneAtr = RetestZoneAtr,
 					RequireConfirmationClose = RequireConfirmationClose,
@@ -1807,6 +1819,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Setups completed     : {0}  ({1} long / {2} short)", completedSetups, longSetups, shortSetups));
 			Print(string.Format("  Entries submitted    : {0}  ({1} long / {2} short)", totalEntries, longEntries, shortEntries));
 
+			if (setup != null && setup.ContinuationEntries > 0)
+			{
+				Print(string.Format("      by kind            : {0} reversal / {1} continuation",
+					setup.ReversalEntries, setup.ContinuationEntries));
+			}
+
+			if (nq != null && nq.Sweeps.ContinuationsFound > 0)
+				Print(string.Format("      breaks reported as continuations: {0}", nq.Sweeps.ContinuationsFound));
+
 			if (nq != null && nq.Sweeps.AmbiguousBars > 0)
 				Print(string.Format("  Bars sweeping both sides at once: {0} (resolved to the deeper raid)", nq.Sweeps.AmbiguousBars));
 
@@ -2145,6 +2166,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public int MaxBarsToReclaim { get; set; }
 
 		[NinjaScriptProperty]
+		[Display(Name = "Trade continuations", Description = "Also trade breaks that hold: price goes through a level, does not reclaim, then retests it from the other side and carries on. Off leaves only reversals off a level.", GroupName = "4. Step 2 - Liquidity", Order = 3)]
+		public bool EnableContinuations { get; set; }
+
+		[NinjaScriptProperty]
 		[Range(1, 200)]
 		[Display(Name = "Max bars sweep to shift", GroupName = "5. Step 3 - Structure", Order = 0)]
 		public int MaxBarsSweepToShift { get; set; }
@@ -2155,8 +2180,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		[NinjaScriptProperty]
 		[Range(0, 50)]
-		[Display(Name = "Max setup risk (ATR)", Description = "Discard a setup whose structure sits further than this from the swept extreme - that distance is the trade's risk. 0 disables.", GroupName = "5. Step 3 - Structure", Order = 3)]
+		[Display(Name = "Max setup risk (ATR)", Description = "Ceiling on the trade's actual risk, entry to stop, checked at entry. 0 disables.", GroupName = "5. Step 3 - Structure", Order = 3)]
 		public double MaxSetupRiskAtr { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 50)]
+		[Display(Name = "Max structure distance (ATR)", Description = "How far the broken structure may sit from the swept extreme. A coherence test on the setup, not a risk test - the stop no longer comes from that extreme. Lower it to thin the funnel, raise it for more setups. 0 disables.", GroupName = "5. Step 3 - Structure", Order = 4)]
+		public double MaxStructureDistanceAtr { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, 10)]

@@ -45,6 +45,13 @@ namespace Socrates.Market
 
 		/// <summary>How far beyond the level price reached, in points.</summary>
 		public double PenetrationPoints;
+
+		/// <summary>
+		/// True when price went through the level and stayed through it, rather than
+		/// reclaiming. The level is expected to flip role and hold on the retest, so the
+		/// trade runs with the break instead of against it.
+		/// </summary>
+		public bool IsContinuation;
 	}
 
 	public sealed class SweepSettings
@@ -60,6 +67,16 @@ namespace Socrates.Market
 
 		/// <summary>How far from price to consider levels, as a multiple of ATR.</summary>
 		public double LevelSearchAtr = 3.0;
+
+		/// <summary>
+		/// Report a candidate that never reclaimed as a continuation break rather than
+		/// discarding it.
+		///
+		/// These were already being detected and thrown away - "never came back, this was a
+		/// genuine break, so stand aside". That is the correct call for a reversal strategy
+		/// and it also means every break through a level was going in the bin unexamined.
+		/// </summary>
+		public bool EmitContinuations = false;
 	}
 
 	public sealed class SweepDetector
@@ -77,6 +94,7 @@ namespace Socrates.Market
 		private Candidate buySide;
 		private Candidate sellSide;
 		private int ambiguousBars;
+		private int continuationsFound;
 
 		public SweepDetector(SweepSettings settings)
 		{
@@ -90,6 +108,9 @@ namespace Socrates.Market
 
 		/// <summary>Bars where both sides reclaimed at once and one had to be chosen over the other.</summary>
 		public int AmbiguousBars { get { return ambiguousBars; } }
+
+		/// <summary>Breaks reported as continuations rather than discarded.</summary>
+		public int ContinuationsFound { get { return continuationsFound; } }
 
 		public void Reset()
 		{
@@ -105,6 +126,8 @@ namespace Socrates.Market
 		{
 			SweepEvent buyResult = default(SweepEvent);
 			SweepEvent sellResult = default(SweepEvent);
+			SweepEvent buyBreak = default(SweepEvent);
+			SweepEvent sellBreak = default(SweepEvent);
 
 			double minPenetration = Math.Max(settings.MinPenetrationPoints, atr * settings.MinPenetrationAtr);
 			double searchDistance = Math.Max(atr * settings.LevelSearchAtr, minPenetration * 4.0);
@@ -160,7 +183,21 @@ namespace Socrates.Market
 				}
 				else if (barIndex - buySide.StartBarIndex >= settings.MaxBarsToReclaim)
 				{
-					// Never came back. This was a genuine break, so stand aside.
+					// Never came back: a genuine break upward. The close test makes sure price
+					// is still holding above the level rather than drifting back into it.
+					if (settings.EmitContinuations && close > buySide.Level.Price)
+					{
+						buyBreak.IsValid = true;
+						buyBreak.IsContinuation = true;
+						buyBreak.Side = SweepSide.BuySide;
+						buyBreak.Level = buySide.Level;
+						buyBreak.ExtremePrice = buySide.Extreme;
+						buyBreak.ExtremeBarIndex = buySide.ExtremeBarIndex;
+						buyBreak.ConfirmBarIndex = barIndex;
+						buyBreak.ConfirmTime = time;
+						buyBreak.PenetrationPoints = buySide.Extreme - buySide.Level.Price;
+					}
+
 					buySide = default(Candidate);
 				}
 			}
@@ -214,6 +251,19 @@ namespace Socrates.Market
 				}
 				else if (barIndex - sellSide.StartBarIndex >= settings.MaxBarsToReclaim)
 				{
+					if (settings.EmitContinuations && close < sellSide.Level.Price)
+					{
+						sellBreak.IsValid = true;
+						sellBreak.IsContinuation = true;
+						sellBreak.Side = SweepSide.SellSide;
+						sellBreak.Level = sellSide.Level;
+						sellBreak.ExtremePrice = sellSide.Extreme;
+						sellBreak.ExtremeBarIndex = sellSide.ExtremeBarIndex;
+						sellBreak.ConfirmBarIndex = barIndex;
+						sellBreak.ConfirmTime = time;
+						sellBreak.PenetrationPoints = sellSide.Level.Price - sellSide.Extreme;
+					}
+
 					sellSide = default(Candidate);
 				}
 			}
@@ -229,9 +279,21 @@ namespace Socrates.Market
 				result = buyResult.PenetrationPoints >= sellResult.PenetrationPoints ? buyResult : sellResult;
 				ambiguousBars++;
 			}
-			else
+			else if (buyResult.IsValid || sellResult.IsValid)
 			{
 				result = buyResult.IsValid ? buyResult : sellResult;
+			}
+			else
+			{
+				// Continuations only get a look in when no reclaim happened anywhere on this
+				// bar. A reversal is the more specific event and keeps priority.
+				if (buyBreak.IsValid && sellBreak.IsValid)
+					result = buyBreak.PenetrationPoints >= sellBreak.PenetrationPoints ? buyBreak : sellBreak;
+				else
+					result = buyBreak.IsValid ? buyBreak : sellBreak;
+
+				if (result.IsValid)
+					continuationsFound++;
 			}
 
 			if (result.IsValid)

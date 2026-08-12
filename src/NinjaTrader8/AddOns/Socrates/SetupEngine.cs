@@ -59,11 +59,23 @@ namespace Socrates.Market
 		public bool UsePostSweepSwing = true;
 
 		/// <summary>
-		/// Reject a setup whose structure reference sits further than this many ATRs from the
-		/// swept extreme. That distance is the trade's risk, so this is a ceiling on risk
-		/// expressed in the units that produced it. Zero disables.
+		/// Ceiling on the trade's actual risk - entry to stop - in ATRs, applied at entry.
+		/// Zero disables.
 		/// </summary>
 		public double MaxSetupRiskAtr = 2.5;
+
+		/// <summary>
+		/// Ceiling on how far the broken structure may sit from the swept extreme, applied at
+		/// the shift. Zero disables.
+		///
+		/// This used to be MaxSetupRiskAtr, back when the stop was pinned beyond the swept
+		/// extreme and that distance was the risk. The stop now comes from the retest
+		/// pullback, which is far nearer, so the two measure different things - and the risk
+		/// ceiling was still being applied to a distance that no longer sets the risk. It was
+		/// discarding 573 of 819 structure breaks on that basis. Kept as a coherence test on
+		/// the setup, set loose enough to be one.
+		/// </summary>
+		public double MaxStructureDistanceAtr = 5.0;
 
 		/// <summary>Minimum range of the bar that breaks structure, as a multiple of ATR. This is the "strong displacement" test. Zero disables it.</summary>
 		public double MinDisplacementAtr = 1.0;
@@ -130,6 +142,7 @@ namespace Socrates.Market
 		private double zoneHalfWidth;
 		private double retestExtreme;
 		private bool zoneTouched;
+		private bool isContinuation;
 		private int discardedTooWide;
 		private int discardedPoorReward;
 		private int sweepsAdopted;
@@ -140,6 +153,8 @@ namespace Socrates.Market
 		private int targetsFromSwing;
 		private int targetsFromRMultiple;
 		private int targetsFromLiquidity;
+		private int reversalEntries;
+		private int continuationEntries;
 
 		public SetupEngine(SetupEngineSettings settings)
 		{
@@ -182,6 +197,11 @@ namespace Socrates.Market
 
 		public int TargetsFromLiquidity { get { return targetsFromLiquidity; } }
 
+		/// <summary>Completed setups by kind, so the two can be judged separately rather than as one blended number.</summary>
+		public int ReversalEntries { get { return reversalEntries; } }
+
+		public int ContinuationEntries { get { return continuationEntries; } }
+
 		public string LastTransition { get; private set; }
 
 		public void Reset(string reason)
@@ -190,7 +210,21 @@ namespace Socrates.Market
 			sweep = default(SweepEvent);
 			structureReference = default(SwingPoint);
 			zoneTouched = false;
+			isContinuation = false;
 			LastTransition = reason;
+		}
+
+		/// <summary>
+		/// A reversal trades against the move that took the level: lows swept, so buy. A
+		/// continuation trades with it: the level broke and held, so the break direction is
+		/// the trade direction. Same event type, opposite mapping, which is worth having in
+		/// one place rather than inline at each use.
+		/// </summary>
+		private static bool IsBullish(SweepEvent s)
+		{
+			return s.IsContinuation
+				? s.Side == SweepSide.BuySide
+				: s.Side == SweepSide.SellSide;
 		}
 
 		/// <summary>
@@ -211,8 +245,31 @@ namespace Socrates.Market
 				{
 					sweepsAdopted++;
 					sweep = fresh;
-					state = SetupState.AwaitingStructureShift;
 					zoneTouched = false;
+					isContinuation = fresh.IsContinuation;
+					structureReference = default(SwingPoint);
+
+					if (isContinuation)
+					{
+						// No structure shift to wait for: the break through the level is the
+						// structural event. Straight to the retest, with the broken level as
+						// the zone it is expected to hold from the other side.
+						bool up = IsBullish(sweep);
+
+						shiftBarIndex = barIndex;
+						displacementExtreme = sweep.ExtremePrice;
+						zoneCenter = sweep.Level.Price;
+						zoneHalfWidth = Math.Max(atr * settings.RetestZoneAtr, 0.25);
+						retestExtreme = up ? low : high;
+						state = SetupState.AwaitingRetest;
+
+						LastTransition = string.Format("Break {0} of {1} ({2:N2} beyond, no reclaim). Awaiting retest of {3:N2}.",
+							up ? "above" : "below", sweep.Level, sweep.PenetrationPoints, zoneCenter);
+
+						return result;
+					}
+
+					state = SetupState.AwaitingStructureShift;
 
 					structureReference = sweep.Side == SweepSide.SellSide
 						? analyzer.Swings.MostRecentHighAtOrBefore(sweep.ConfirmBarIndex)
@@ -269,14 +326,14 @@ namespace Socrates.Market
 				// trade's risk, fixed before entry is even considered. Checked here so a
 				// hopeless setup is abandoned at the shift rather than carried to the retest
 				// and rejected on stop size, which reads as a sizing problem and is not one.
-				double setupRisk = Math.Abs(structureReference.Price - sweep.ExtremePrice);
+				double structureDistance = Math.Abs(structureReference.Price - sweep.ExtremePrice);
 
-				if (settings.MaxSetupRiskAtr > 0 && setupRisk > atr * settings.MaxSetupRiskAtr)
+				if (settings.MaxStructureDistanceAtr > 0 && structureDistance > atr * settings.MaxStructureDistanceAtr)
 				{
 					discardedTooWide++;
 					Reset(string.Format(
 						"Structure at {0:N2} is {1:N2} pts from the swept extreme, over the {2:N2} allowed ({3:N1} ATR). Setup discarded.",
-						structureReference.Price, setupRisk, atr * settings.MaxSetupRiskAtr, settings.MaxSetupRiskAtr));
+						structureReference.Price, structureDistance, atr * settings.MaxStructureDistanceAtr, settings.MaxStructureDistanceAtr));
 					return result;
 				}
 
@@ -319,11 +376,26 @@ namespace Socrates.Market
 				return result;
 			}
 
-			bool bullish = sweep.Side == SweepSide.SellSide;
+			bool bullish = IsBullish(sweep);
 
-			// Invalidation: price back through the sweep extreme means the level did not hold.
-			if ((bullish && low < sweep.ExtremePrice) || (!bullish && high > sweep.ExtremePrice))
+			if (isContinuation)
 			{
+				// The swept extreme sits in the trade's favour on a continuation, so the
+				// reversal test would fire on the first bar. What invalidates a break is
+				// price closing back through the level it broke.
+				bool brokeBack = bullish
+					? close < sweep.Level.Lower
+					: close > sweep.Level.Upper;
+
+				if (brokeBack)
+				{
+					Reset("Price closed back through the broken level; the break failed.");
+					return result;
+				}
+			}
+			else if ((bullish && low < sweep.ExtremePrice) || (!bullish && high > sweep.ExtremePrice))
+			{
+				// Invalidation: price back through the sweep extreme means the level did not hold.
 				Reset("Price traded back through the sweep extreme; setup invalidated.");
 				return result;
 			}
@@ -475,12 +547,30 @@ namespace Socrates.Market
 			result.Direction = bullish ? TradeDirection.Long : TradeDirection.Short;
 			result.StopPrice = stopPrice;
 			result.TargetPrice = targetPrice;
-			result.Label = bullish ? "sweepLong" : "sweepShort";
-			result.Detail = string.Format(
-				"{0}: swept {1}, shift at {2:N2}, retest {3:N2}. Stop {4:N2} ({5}), target {6:N2} ({7}). Risk {8:N2} pts, {9:N2}R.",
-				result.Label, sweep.Level, structureReference.Price, zoneCenter,
-				stopPrice, string.Format("{0} {1:N2}", stopSource, stopAnchor),
-				targetPrice, targetSource, risk, reward / risk);
+			// Separate labels so the two setup types are told apart in the trade list, and so
+			// their stop and target orders never share a signal name.
+			result.Label = isContinuation
+				? (bullish ? "contLong" : "contShort")
+				: (bullish ? "sweepLong" : "sweepShort");
+
+			if (isContinuation)
+			{
+				continuationEntries++;
+				result.Detail = string.Format(
+					"{0}: broke {1}, retest {2:N2}. Stop {3:N2} ({4}), target {5:N2} ({6}). Risk {7:N2} pts, {8:N2}R.",
+					result.Label, sweep.Level, zoneCenter,
+					stopPrice, string.Format("{0} {1:N2}", stopSource, stopAnchor),
+					targetPrice, targetSource, risk, reward / risk);
+			}
+			else
+			{
+				reversalEntries++;
+				result.Detail = string.Format(
+					"{0}: swept {1}, shift at {2:N2}, retest {3:N2}. Stop {4:N2} ({5}), target {6:N2} ({7}). Risk {8:N2} pts, {9:N2}R.",
+					result.Label, sweep.Level, structureReference.Price, zoneCenter,
+					stopPrice, string.Format("{0} {1:N2}", stopSource, stopAnchor),
+					targetPrice, targetSource, risk, reward / risk);
+			}
 
 			Reset("Entry taken.");
 			return result;
