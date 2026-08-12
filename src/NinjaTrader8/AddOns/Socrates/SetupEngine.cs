@@ -122,6 +122,9 @@ namespace Socrates.Market
 	public struct SetupResult
 	{
 		public bool HasEntry;
+
+		/// <summary>True when this came from a break that held rather than a sweep that reversed.</summary>
+		public bool IsContinuation;
 		public TradeDirection Direction;
 		public double StopPrice;
 		public double TargetPrice;
@@ -169,6 +172,9 @@ namespace Socrates.Market
 
 		/// <summary>True once price has traded into the retest zone of the current setup. Exposed so the strategy can count how far setups get.</summary>
 		public bool ZoneTouched { get { return zoneTouched; } }
+
+		/// <summary>Whether the setup in progress is a continuation. A continuation never passes through a structure shift, so the funnel must not count it as one.</summary>
+		public bool ActiveIsContinuation { get { return isContinuation; } }
 
 		/// <summary>Running count of setups abandoned because the structure was too far from the swept extreme to trade against.</summary>
 		public int DiscardedTooWide { get { return discardedTooWide; } }
@@ -348,7 +354,7 @@ namespace Socrates.Market
 
 				shiftBarIndex = barIndex;
 				displacementExtreme = sweep.Side == SweepSide.SellSide ? high : low;
-				retestExtreme = sweep.Side == SweepSide.SellSide ? low : high;
+				retestExtreme = IsBullish(sweep) ? low : high;
 				BuildRetestZone(atr);
 				zoneTouched = false;
 				state = SetupState.AwaitingRetest;
@@ -366,7 +372,12 @@ namespace Socrates.Market
 			// trade is betting holds, and unlike a swing point it needs no confirmation lag -
 			// which matters, because a swing needs (2 x strength) + 1 bars and the pullback
 			// low is usually one or two bars old when entry triggers.
-			retestExtreme = sweep.Side == SweepSide.SellSide
+			// IsBullish, not the raw side. A continuation runs with the break, so BuySide is
+			// bullish there and bearish for a reversal. Reading the side directly tracked the
+			// high on a bullish continuation - the opposite extreme - which made the anchor
+			// fail its own validity test and fall through to the confirmed-swing fallback on
+			// 236 of 247 setups, quietly undoing the retest stop entirely.
+			retestExtreme = IsBullish(sweep)
 				? Math.Min(retestExtreme, low)
 				: Math.Max(retestExtreme, high);
 
@@ -544,6 +555,7 @@ namespace Socrates.Market
 			}
 
 			result.HasEntry = true;
+			result.IsContinuation = isContinuation;
 			result.Direction = bullish ? TradeDirection.Long : TradeDirection.Short;
 			result.StopPrice = stopPrice;
 			result.TargetPrice = targetPrice;

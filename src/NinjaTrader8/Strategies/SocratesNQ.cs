@@ -135,6 +135,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int shortSetups;
 		private int longEntries;
 		private int shortEntries;
+		private int reversalEntries;
+		private int continuationEntries;
+		private int dayBreaks;
+		private int totalBreaks;
 		private int breadthSkippedClosed;
 		private int vixBarsSeen;
 		private int vixUpdatesApplied;
@@ -723,10 +727,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 				totalSweeps++;
 			}
 
+			// A continuation enters AwaitingRetest at the break, without ever passing through
+			// a structure shift. Counting that transition as a shift put 1,949 in a column
+			// that had held 246, and the number described nothing.
 			if (stateBefore != SetupState.AwaitingRetest && setup.State == SetupState.AwaitingRetest)
 			{
-				dayShifts++;
-				totalShifts++;
+				if (setup.ActiveIsContinuation)
+				{
+					dayBreaks++;
+					totalBreaks++;
+				}
+				else
+				{
+					dayShifts++;
+					totalShifts++;
+				}
 			}
 
 			// An entry on the same bar the zone is first touched leaves ZoneTouched already
@@ -1169,6 +1184,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 			else
 				shortEntries++;
 
+			// Counted here, at the order, rather than in the engine. The engine increments
+			// when a setup completes, which includes every one the gates below it went on to
+			// refuse - so "by kind" summed to 202 against 39 entries submitted.
+			if (result.IsContinuation)
+				continuationEntries++;
+			else
+				reversalEntries++;
+
 			Log(string.Format("ENTRY {0} x{1} @ ~{2:N2}, stop {3:N2} ({4:N0} ticks), target {5:N2}. {6} {7}",
 				result.Direction, contracts, entryPrice, stopPrice, stopDistanceTicks, targetPrice,
 				result.Detail, sizingReason));
@@ -1312,6 +1335,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			daySweeps = dayShifts = dayZoneTouches = dayEntries = 0;
 			dayBlockedByRisk = dayRejectedVix = dayRejectedBreadth = dayRejectedStop = dayRejectedSizing = 0;
 			dayRejectedRiskBudget = 0;
+			dayBreaks = 0;
 
 			totalSweeps = totalShifts = totalZoneTouches = totalEntries = 0;
 			totalBlockedByRisk = totalRejectedVix = totalRejectedBreadth = totalRejectedStop = totalRejectedSizing = 0;
@@ -1324,6 +1348,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			stopTicksMax = 0;
 			stopTicksSum = 0;
 			longSetups = shortSetups = longEntries = shortEntries = 0;
+			reversalEntries = continuationEntries = 0;
+			dayBreaks = totalBreaks = 0;
 			breadthSkippedClosed = 0;
 			vixBarsSeen = 0;
 			vixUpdatesApplied = 0;
@@ -1810,6 +1836,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			Print(string.Format("  Structure shifts (3) : {0}", totalShifts));
+
+			if (totalBreaks > 0)
+				Print(string.Format("  Breaks held (cont.)  : {0}", totalBreaks));
 			Print(string.Format("      discarded, too wide: {0}", setup != null ? setup.DiscardedTooWide : 0));
 			Print(string.Format("  Retests reached (4)  : {0}", totalZoneTouches));
 
@@ -1819,10 +1848,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Setups completed     : {0}  ({1} long / {2} short)", completedSetups, longSetups, shortSetups));
 			Print(string.Format("  Entries submitted    : {0}  ({1} long / {2} short)", totalEntries, longEntries, shortEntries));
 
-			if (setup != null && setup.ContinuationEntries > 0)
+			if (continuationEntries > 0 || reversalEntries > 0)
 			{
 				Print(string.Format("      by kind            : {0} reversal / {1} continuation",
-					setup.ReversalEntries, setup.ContinuationEntries));
+					reversalEntries, continuationEntries));
 			}
 
 			if (nq != null && nq.Sweeps.ContinuationsFound > 0)
