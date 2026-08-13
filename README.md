@@ -68,6 +68,8 @@ src/NinjaTrader8/
     RiskManager.cs         Session windows, daily loss limits, halts
     PositionSizer.cs       Fixed contract sizing under a ceiling
     Signal.cs              Shared trade direction type
+src/TradingView/
+  SocratesNQ.pine          Pine Script v6 port of the same six steps
 docs/
   MECHANIZATION.md         How the written rules became arithmetic
   STRATEGY_SPEC.md         Template for defining trade logic
@@ -156,6 +158,20 @@ so a 42,000-bar backtest is not paying to draw rectangles nobody will look at.
 
 The folder structure mirrors NinjaTrader's own `Documents\NinjaTrader 8\bin\Custom\`
 so files can be copied across without rearranging.
+
+## On TradingView
+
+`src/TradingView/SocratesNQ.pine` is the same six steps in Pine Script v6 — same
+parameter names, same defaults, so settings carry across. Paste it into the Pine Editor
+and add it to an NQ chart.
+
+It is a port, not a second source of truth. Two differences matter before comparing
+numbers: there is no 1-minute fill series, so a bar touching both stop and target
+resolves on TradingView's own assumption; and commission and slippage live in the
+strategy's Properties tab rather than in the script, so they are zero until you set them.
+The trade is that TradingView carries VIX and US equity data, which makes steps 5 and 6
+testable there — on a futures-only NinjaTrader feed they are not. The full list of
+differences is a comment block at the bottom of the file.
 
 ---
 
