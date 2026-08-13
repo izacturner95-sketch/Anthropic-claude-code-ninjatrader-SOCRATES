@@ -274,9 +274,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 				MinPenetrationPoints = 2.0;
 				MaxBarsToReclaim = 6;
 
-				// Trade breaks through a level as well as reversals off one. The detector was
-				// already finding these and discarding them.
-				EnableContinuations = true;
+				// Off. Implemented, available, and measured: over 21,590 bars it produced 144
+				// of 147 entries at -0.08R and a 0.95 profit factor, while crowding reversals
+				// out of the pipeline almost entirely - structure shifts fell from 246 to 40
+				// because a continuation holding a position blocks everything behind it.
+				//
+				// Turn it on to test the selective version: continuations now only fire on
+				// major reference levels, which is the change that has not been measured yet.
+				EnableContinuations = false;
+				ContinuationsOnMajorLevelsOnly = true;
 
 				// --- Step 3: structure ---
 				//
@@ -405,7 +411,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 						MinPenetrationAtr = MinPenetrationAtr,
 						MinPenetrationPoints = MinPenetrationPoints,
 						MaxBarsToReclaim = MaxBarsToReclaim,
-						EmitContinuations = EnableContinuations
+						EmitContinuations = EnableContinuations,
+						ContinuationsOnMajorLevelsOnly = ContinuationsOnMajorLevelsOnly
 					},
 					OrderBlocks = new OrderBlockSettings
 					{
@@ -2195,8 +2202,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public int MaxBarsToReclaim { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Trade continuations", Description = "Also trade breaks that hold: price goes through a level, does not reclaim, then retests it from the other side and carries on. Off leaves only reversals off a level.", GroupName = "4. Step 2 - Liquidity", Order = 3)]
+		[Display(Name = "Trade continuations", Description = "Also trade breaks that hold: price goes through a level, does not reclaim, then retests it from the other side and carries on. Measured at -0.08R over 147 trades in its unselective form, so it ships off.", GroupName = "4. Step 2 - Liquidity", Order = 3)]
 		public bool EnableContinuations { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Continuations on major levels only", Description = "Restrict continuations to prior day and week levels, pivots, the overnight and opening ranges - not swings or order blocks. With every level eligible, a break fired every seven bars and meant nothing.", GroupName = "4. Step 2 - Liquidity", Order = 4)]
+		public bool ContinuationsOnMajorLevelsOnly { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(1, 200)]

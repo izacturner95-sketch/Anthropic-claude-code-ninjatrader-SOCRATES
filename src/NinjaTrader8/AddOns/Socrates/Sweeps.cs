@@ -77,6 +77,17 @@ namespace Socrates.Market
 		/// and it also means every break through a level was going in the bin unexamined.
 		/// </summary>
 		public bool EmitContinuations = false;
+
+		/// <summary>
+		/// Only report a continuation when the level broken is a major reference - prior day
+		/// or week, a pivot, the overnight or opening range - rather than any swing or order
+		/// block in the book.
+		///
+		/// Without it, 3,011 breaks were reported over 21,590 bars, one every seven, because
+		/// with levels every few points something is always breaking. A break has to be an
+		/// event for the retest of it to mean anything.
+		/// </summary>
+		public bool ContinuationsOnMajorLevelsOnly = true;
 	}
 
 	public sealed class SweepDetector
@@ -185,7 +196,8 @@ namespace Socrates.Market
 				{
 					// Never came back: a genuine break upward. The close test makes sure price
 					// is still holding above the level rather than drifting back into it.
-					if (settings.EmitContinuations && close > buySide.Level.Price)
+					if (settings.EmitContinuations && close > buySide.Level.Price
+						&& (!settings.ContinuationsOnMajorLevelsOnly || buySide.Level.IsMajor))
 					{
 						buyBreak.IsValid = true;
 						buyBreak.IsContinuation = true;
@@ -251,7 +263,8 @@ namespace Socrates.Market
 				}
 				else if (barIndex - sellSide.StartBarIndex >= settings.MaxBarsToReclaim)
 				{
-					if (settings.EmitContinuations && close < sellSide.Level.Price)
+					if (settings.EmitContinuations && close < sellSide.Level.Price
+						&& (!settings.ContinuationsOnMajorLevelsOnly || sellSide.Level.IsMajor))
 					{
 						sellBreak.IsValid = true;
 						sellBreak.IsContinuation = true;

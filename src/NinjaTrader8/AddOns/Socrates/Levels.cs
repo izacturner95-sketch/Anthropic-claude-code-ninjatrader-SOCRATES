@@ -77,6 +77,26 @@ namespace Socrates.Market
 			get { return string.Format("{0} {1}", Timeframe, Kind); }
 		}
 
+		/// <summary>
+		/// A reference level the whole market can see - prior day and week extremes, pivots,
+		/// the overnight range, the opening range - as opposed to a swing or an order block
+		/// the price action happened to leave behind.
+		///
+		/// The distinction matters for continuations. A break of the prior day's high is an
+		/// event; a break of the fourteenth swing high in the book is not, and with a level
+		/// every few points something is always being broken.
+		/// </summary>
+		public bool IsMajor
+		{
+			get
+			{
+				return Kind != LevelKind.SwingHigh
+					&& Kind != LevelKind.SwingLow
+					&& Kind != LevelKind.Supply
+					&& Kind != LevelKind.Demand;
+			}
+		}
+
 		public override string ToString()
 		{
 			return string.Format("{0} @ {1:N2}", Name, Price);

@@ -124,6 +124,13 @@ them into one expectancy would hide either one failing.
 | A break is a non-reclaim within the same window | `Max bars to reclaim` | The same number decides both, which couples them. Say if a break should need longer to confirm. |
 | Retest zone = the broken level itself | — | Or would you enter on a break of the retest's high instead? |
 | Reversals take priority when both fire on one bar | — | |
+| Only major levels qualify | `Continuations on major levels only` | Prior day and week, pivots, overnight and opening ranges. With every swing and order block eligible, 3,011 breaks fired over 21,590 bars - one per seven - and the trades lost money. |
+
+**Measured, and it ships off.** In its unselective form the continuation path produced
+144 of 147 entries at −0.08R, a 0.95 profit factor, and a $13,895 drawdown. It also
+crowded reversals out almost entirely: structure shifts fell from 246 to 40, because a
+continuation holding a position blocks every setup behind it. The selective version —
+major levels only — has not been measured yet, and is the reason the code is still here.
 
 ---
 
