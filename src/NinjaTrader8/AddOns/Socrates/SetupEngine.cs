@@ -176,6 +176,11 @@ namespace Socrates.Market
 		/// <summary>Whether the setup in progress is a continuation. A continuation never passes through a structure shift, so the funnel must not count it as one.</summary>
 		public bool ActiveIsContinuation { get { return isContinuation; } }
 
+		/// <summary>Centre of the retest zone in progress. Exposed for drawing it on a chart.</summary>
+		public double ZoneCenter { get { return zoneCenter; } }
+
+		public double ZoneHalfWidth { get { return zoneHalfWidth; } }
+
 		/// <summary>Running count of setups abandoned because the structure was too far from the swept extreme to trade against.</summary>
 		public int DiscardedTooWide { get { return discardedTooWide; } }
 

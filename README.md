@@ -142,6 +142,18 @@ survives a change of position size.
 `docs/SETUP.md` sections 6 and 7 work through an empty Output window and a run with
 output but no trades.
 
+## On a chart
+
+With **Show chart visuals** on, each trade draws its stop and target as lines running
+from the entry bar, an arrow at entry, and the planned reward-to-risk beside it. The
+retest zone is shaded while a setup waits in it — blue for a reversal, purple for a
+continuation — so the chart shows what the strategy is watching, not only what it did.
+A panel in the top-right carries running totals: trades, win rate, net, profit factor,
+per-trade dollars, planned R:R, and the day's funnel.
+
+None of it runs in the Strategy Analyzer. Drawing is skipped whenever there is no chart,
+so a 42,000-bar backtest is not paying to draw rectangles nobody will look at.
+
 The folder structure mirrors NinjaTrader's own `Documents\NinjaTrader 8\bin\Custom\`
 so files can be copied across without rearranging.
 

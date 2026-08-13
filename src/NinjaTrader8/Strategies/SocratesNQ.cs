@@ -18,7 +18,10 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Windows.Media;
 using NinjaTrader.Cbi;
+using NinjaTrader.Gui;
+using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.Data;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.Indicators;
@@ -137,6 +140,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int shortEntries;
 		private int reversalEntries;
 		private int continuationEntries;
+
+		// Chart visuals
+		private int visualEntryBar = -1;
+		private int visualZoneStartBar;
+		private double visualStop;
+		private double visualTarget;
+		private string visualTag = string.Empty;
+		private string lastZoneTag;
+		private double plannedRrSum;
+		private int plannedRrCount;
 		private int dayBreaks;
 		private int totalBreaks;
 		private int breadthSkippedClosed;
@@ -373,6 +386,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// every overnight setup for want of data it was never going to have.
 				BreadthActiveStart = 93000;
 				BreadthActiveEnd = 160000;
+
+				ShowChartVisuals = true;
+				ShowSetupZones = true;
+				ShowStatsPanel = true;
 
 				EnableLogging = true;
 				VerboseLogging = false;
@@ -678,6 +695,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			LogStatusIfDue(atr);
 
+			if (CanDraw)
+			{
+				UpdateTradeVisuals();
+				DrawSetupZone();
+				DrawStatsPanel();
+			}
+
 			// End-of-day flatten outranks everything.
 			if (risk.ShouldFlatten(timeOfDay))
 			{
@@ -742,6 +766,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// that had held 246, and the number described nothing.
 			if (stateBefore != SetupState.AwaitingRetest && setup.State == SetupState.AwaitingRetest)
 			{
+				visualZoneStartBar = CurrentBar;
+				lastZoneTag = null;
+
 				if (setup.ActiveIsContinuation)
 				{
 					dayBreaks++;
@@ -1189,6 +1216,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// oldest unmatched entry with the next closed trade holds.
 			pendingRiskDollars.Add(stopDistanceTicks * TickValueDollars * contracts);
 
+			double plannedReward = targetPrice > 0 ? Math.Abs(targetPrice - entryPrice) : 0;
+			double plannedRisk = Math.Abs(entryPrice - stopPrice);
+
+			if (plannedRisk > 0 && plannedReward > 0)
+			{
+				plannedRrSum += plannedReward / plannedRisk;
+				plannedRrCount++;
+			}
+
+			visualEntryBar = CurrentBar;
+			visualStop = stopPrice;
+			visualTarget = targetPrice;
+			visualTag = "t" + CurrentBar;
+			DrawEntryMarker(result, entryPrice, stopPrice, targetPrice);
+
 			if (bullish)
 				longEntries++;
 			else
@@ -1248,6 +1290,131 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			Log(string.Format("Connection update: order={0}, price={1}. New entries {2}.",
 				e.Status, e.PriceStatus, down ? "BLOCKED" : "allowed"));
+		}
+
+		#endregion
+
+		#region Chart visuals
+
+		// Drawing is skipped entirely when there is no chart, which is how the Strategy
+		// Analyzer runs. A 42,000-bar optimisation should not be paying to draw rectangles
+		// nobody will look at.
+		private bool CanDraw
+		{
+			get { return ShowChartVisuals && ChartControl != null; }
+		}
+
+		/// <summary>
+		/// Stop and target as lines running from the entry bar to wherever the trade is now,
+		/// redrawn each bar under the same tag so they extend rather than accumulate. Drawn
+		/// from past bars only - projecting into the future needs bars that do not exist yet.
+		/// </summary>
+		private void UpdateTradeVisuals()
+		{
+			if (!CanDraw || visualEntryBar < 0)
+				return;
+
+			int barsAgo = CurrentBar - visualEntryBar;
+
+			if (barsAgo < 0 || barsAgo > 400)
+			{
+				visualEntryBar = -1;
+				return;
+			}
+
+			Draw.Line(this, "stop" + visualTag, barsAgo, visualStop, 0, visualStop, Brushes.Crimson);
+
+			if (visualTarget > 0)
+				Draw.Line(this, "targ" + visualTag, barsAgo, visualTarget, 0, visualTarget, Brushes.SeaGreen);
+
+			// Once flat the trade is history: leave the last drawing in place and stop
+			// extending it, so the chart keeps a record of where the levels were.
+			if (Position.MarketPosition == MarketPosition.Flat)
+				visualEntryBar = -1;
+		}
+
+		private void DrawEntryMarker(SetupResult result, double entryPrice, double stopPrice, double targetPrice)
+		{
+			if (!CanDraw)
+				return;
+
+			bool bullish = result.Direction == TradeDirection.Long;
+			double risk = Math.Abs(entryPrice - stopPrice);
+			double reward = targetPrice > 0 ? Math.Abs(targetPrice - entryPrice) : 0;
+
+			if (bullish)
+				Draw.ArrowUp(this, "in" + visualTag, true, 0, Low[0] - (TickSize * 8), Brushes.DodgerBlue);
+			else
+				Draw.ArrowDown(this, "in" + visualTag, true, 0, High[0] + (TickSize * 8), Brushes.Orange);
+
+			Draw.Text(this, "lbl" + visualTag,
+				string.Format("{0}  {1:N1}R", result.IsContinuation ? "cont" : "sweep",
+					risk > 0 ? reward / risk : 0),
+				0,
+				bullish ? Low[0] - (TickSize * 20) : High[0] + (TickSize * 20),
+				bullish ? Brushes.DodgerBlue : Brushes.Orange);
+		}
+
+		/// <summary>The retest zone while a setup is waiting in it, so a chart shows what the strategy is watching rather than only what it did.</summary>
+		private void DrawSetupZone()
+		{
+			if (!CanDraw || !ShowSetupZones || setup == null)
+				return;
+
+			if (setup.State != SetupState.AwaitingRetest || setup.ZoneHalfWidth <= 0)
+			{
+				lastZoneTag = null;
+				return;
+			}
+
+			if (lastZoneTag == null)
+				lastZoneTag = "zone" + CurrentBar;
+
+			int startBarsAgo = CurrentBar - visualZoneStartBar;
+
+			if (startBarsAgo < 0 || startBarsAgo > 400)
+				startBarsAgo = 0;
+
+			Draw.Rectangle(this, lastZoneTag,
+				startBarsAgo, setup.ZoneCenter - setup.ZoneHalfWidth,
+				0, setup.ZoneCenter + setup.ZoneHalfWidth,
+				setup.ActiveIsContinuation ? Brushes.MediumPurple : Brushes.SteelBlue);
+		}
+
+		private void DrawStatsPanel()
+		{
+			if (!CanDraw || !ShowStatsPanel)
+				return;
+
+			int closed = tradesWon + tradesLost + tradesScratch;
+			double factor = grossLoss > 0 ? grossProfit / grossLoss : 0;
+
+			string text = string.Format(
+				"SOCRATES NQ\n"
+				+ "state      {0}{1}\n"
+				+ "-----------------------\n"
+				+ "trades     {2}  ({3}W / {4}L)\n"
+				+ "win rate   {5:N0}%\n"
+				+ "net        {6:C0}\n"
+				+ "factor     {7}\n"
+				+ "per trade  {8}\n"
+				+ "planned    1 : {9:N1}\n"
+				+ "-----------------------\n"
+				+ "today      {10} sweeps, {11} shifts\n"
+				+ "           {12} entries, {13:C0}",
+				setup != null ? setup.State.ToString() : "-",
+				setup != null && setup.ActiveIsContinuation ? " (cont)" : string.Empty,
+				closed, tradesWon, tradesLost,
+				closed > 0 ? (tradesWon * 100.0) / closed : 0,
+				grossProfit - grossLoss,
+				factor > 0 ? string.Format("{0:N2}", factor) : "-",
+				closed > 0 ? string.Format("{0:C0}", (grossProfit - grossLoss) / closed) : "-",
+				plannedRrCount > 0 ? plannedRrSum / plannedRrCount : 0,
+				daySweeps, dayShifts, dayEntries, risk != null ? risk.DailyRealisedPnL : 0);
+
+			Draw.TextFixed(this, "socratesPanel", text, TextPosition.TopRight,
+				Brushes.Gainsboro, new SimpleFont("Consolas", 12), Brushes.Transparent,
+				Brushes.Black, 60);
 		}
 
 		#endregion
@@ -1359,6 +1526,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			stopTicksSum = 0;
 			longSetups = shortSetups = longEntries = shortEntries = 0;
 			reversalEntries = continuationEntries = 0;
+			visualEntryBar = -1;
+			visualZoneStartBar = 0;
+			lastZoneTag = null;
+			plannedRrSum = 0;
+			plannedRrCount = 0;
 			dayBreaks = totalBreaks = 0;
 			breadthSkippedClosed = 0;
 			vixBarsSeen = 0;
@@ -2381,6 +2553,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, 235959)]
 		[Display(Name = "Leaders close (HHmmss)", GroupName = "8. Step 6 - Leaders", Order = 6)]
 		public int BreadthActiveEnd { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Show chart visuals", Description = "Draw stop and target lines, entry markers and the stats panel. Skipped automatically when there is no chart, so the Strategy Analyzer is unaffected either way.", GroupName = "10. Chart", Order = 0)]
+		public bool ShowChartVisuals { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Show setup zones", Description = "Shade the retest zone while a setup is waiting in it.", GroupName = "10. Chart", Order = 1)]
+		public bool ShowSetupZones { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Show stats panel", Description = "Running totals in the top-right corner.", GroupName = "10. Chart", Order = 2)]
+		public bool ShowStatsPanel { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Enable logging", GroupName = "9. Diagnostics", Order = 0)]
