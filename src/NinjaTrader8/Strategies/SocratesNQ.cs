@@ -21,6 +21,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Windows.Media;
 using NinjaTrader.Cbi;
 using NinjaTrader.Gui;
+using NinjaTrader.Gui.Chart;
+using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.Data;
 using NinjaTrader.NinjaScript;
