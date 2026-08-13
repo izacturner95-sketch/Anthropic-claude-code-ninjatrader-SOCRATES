@@ -1481,6 +1481,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print("  --- thresholds in effect ---");
 			Print(string.Format("  Sweep        : penetration max({0:N2} ATR, {1:N2} pts), reclaim within {2} bars",
 				MinPenetrationAtr, MinPenetrationPoints, MaxBarsToReclaim));
+			Print(string.Format("  Continuations: {0}", EnableContinuations
+				? (ContinuationsOnMajorLevelsOnly ? "on, major levels only" : "on, any level in the book")
+				: "off"));
 			Print(string.Format("  Levels       : zone half-width {0:N2} ATR, merge within {1:N2} ATR, opening range {2} min",
 				ZoneHalfWidthAtr, LevelMergeAtr, OpeningRangeMinutes));
 			Print(string.Format("  Structure    : swing strength {0}, displacement {1:N2} ATR, max setup risk {2:N2} ATR, {3} bars to shift",
