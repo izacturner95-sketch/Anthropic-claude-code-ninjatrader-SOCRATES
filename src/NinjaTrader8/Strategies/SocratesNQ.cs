@@ -156,6 +156,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double runningEquity;
 		private double equityPeak;
 		private double maxDrawdown;
+		private double riskDollarsSum;
+		private double riskDollarsMin = double.MaxValue;
+		private double riskDollarsMax;
 		private int rSamples;
 		private double rSum;
 		private double rMin = double.MaxValue;
@@ -1367,6 +1370,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			runningEquity = equityPeak = maxDrawdown = 0;
 			rSamples = 0;
 			rSum = 0;
+			riskDollarsSum = 0;
+			riskDollarsMin = double.MaxValue;
+			riskDollarsMax = 0;
 			rMin = double.MaxValue;
 			rMax = double.MinValue;
 			Array.Clear(rBuckets, 0, rBuckets.Length);
@@ -1674,6 +1680,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (riskDollars <= 0)
 				return;
 
+			riskDollarsSum += riskDollars;
+
+			if (riskDollars < riskDollarsMin)
+				riskDollarsMin = riskDollars;
+
+			if (riskDollars > riskDollarsMax)
+				riskDollarsMax = riskDollars;
+
 			double r = profitDollars / riskDollars;
 			rSamples++;
 			rSum += r;
@@ -1732,6 +1746,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Net                  : {0:C}   (gross +{1:C} / -{2:C})",
 				grossProfit - grossLoss, grossProfit, grossLoss));
 			Print(string.Format("  Profit factor        : {0}", grossLoss > 0 ? string.Format("{0:N2}", grossProfit / grossLoss) : "n/a, no losses"));
+			Print(string.Format("  Per trade            : {0:C}", (grossProfit - grossLoss) / closed));
 			Print(string.Format("  Largest drawdown     : {0:C}  (cumulative across the run, not one day)", maxDrawdown));
 
 			if (tradesLost > 0)
@@ -1766,6 +1781,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// so it is the one to judge the geometry by.
 				if (rSum / rSamples <= 0)
 					Print("  NOTE: negative expectancy. The sequence is finding setups; they are not paying.");
+
+				// R only compares across trades that risked similar amounts. With a structural
+				// stop the risk varies by whatever the chart offered, and a fat R on a tight
+				// stop earns a fraction of what a 1R loss on a wide one costs - so a healthy
+				// mean R can sit on top of a mediocre profit factor and mean very little.
+				if (rSamples > 0 && riskDollarsMin > 0)
+				{
+					Print(string.Format("      risk per trade: {0:C} to {1:C}, mean {2:C}",
+						riskDollarsMin, riskDollarsMax, riskDollarsSum / rSamples));
+
+					if (riskDollarsMax > riskDollarsMin * 4)
+					{
+						Print(string.Format("      NOTE: risk varies {0:N0}x between trades, so R is not comparable across them.",
+							riskDollarsMax / riskDollarsMin));
+						Print("            Judge this run on profit factor and per-trade dollars, not on mean R.");
+					}
+				}
 
 				if (stopOverruns > 0)
 				{
