@@ -132,6 +132,9 @@ Trades only happen when all six steps complete in order, so silence is the norma
 state and needs to be explainable. The strategy prints:
 
 - a **startup banner** naming every series with its bar count, before any bar is processed
+- a **live handover banner** at the switch from replay to live data, reporting what the
+  replay carried into the live session — trades already counted against the day, a halt
+  already armed, a position it ended holding
 - a **heartbeat** every `Status every N bars` bars: bar count, ATR, level count, setup state
 - a **daily funnel** at each session roll: sweeps → structure shifts → retests → entries, plus what was rejected and by which gate
 - a **run summary** when it stops, with a pointer to the first step that produced nothing

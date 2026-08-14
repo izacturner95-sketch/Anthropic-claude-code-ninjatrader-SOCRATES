@@ -222,7 +222,40 @@ Whatever you import must cover the **whole** backtest range. A multi-series back
 cannot start before its shortest series, so a leader beginning in August truncates
 everything to August — the banner names the series responsible.
 
-## 9. Before going live
+## 9. Disabling and re-enabling on a live chart
+
+Turning the strategy off and on again paints trades on bars that have already printed.
+Those are not orders that were sent, and nothing went wrong. Enabling a strategy makes
+NinjaTrader replay every loaded bar through it first and fill its trades against that
+history; only after the replay does it switch to live data. Restart at 14:00 and the
+whole morning becomes replay, so the morning's setups get simulated fills and drawn
+markers that were not there before. It is the same mechanism as the Strategy Analyzer,
+running on the same chart.
+
+Two consequences are worth knowing, because both are silent.
+
+**The replay's trades count.** They increment the day's trade counter, they arm the
+consecutive-loss halt, and they move the day's P/L — all of it inside this instance,
+none of it real. Restart with **Max trades per day** at 3 into a morning the replay
+scores as three trades and the strategy will not take a live entry until the session
+rolls, while printing nothing about why. It now says so: the `live from here` banner is
+printed at the handover and reports what was carried in, including a halt.
+
+**A replay that ends holding a position blocks live orders.** `StartBehavior` is
+`WaitUntilFlat`, so the strategy waits for that simulated position to close before it
+will trade for real. The banner reports that too.
+
+Neither is a reason to avoid restarting — it is how the platform works. But if you
+restart mid-session and want a clean slate, restart after the 18:00 roll, or read the
+banner and know what you are looking at.
+
+The chart drawings behave the same way and are worth reading with the same caution: a
+stop line, target line and entry arrow on a past bar mean "the sequence completed here",
+not "an order existed here".
+
+---
+
+## 10. Before going live
 
 In order, no skipping:
 

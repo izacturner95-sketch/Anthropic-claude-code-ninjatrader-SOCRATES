@@ -79,6 +79,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private int processedTradeCount;
 		private bool flattenedForDay;
+		private bool haltCloseLogged;
+
+		// The signal name of the entry currently holding the position, so an exit can be
+		// matched to it. Cleared when the position goes flat.
+		private string activeEntryLabel;
 
 		// --- Diagnostics ---
 		//
@@ -565,7 +570,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				processedTradeCount = 0;
 				flattenedForDay = false;
+				haltCloseLogged = false;
 				sessionLevelsBuilt = false;
+				activeEntryLabel = null;
 
 				ResetDiagnostics();
 			}
@@ -575,8 +582,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			else if (State == State.Realtime)
 			{
-				Log(string.Format("Realtime. {0} contract(s) max {1}, stop {2}, daily loss cap {3}, VIX={4}, breadth={5}.",
-					FixedContracts, MaxContracts, DescribeStop(), DescribeDailyCap(), VixMode, BreadthMode));
+				LogRealtimeHandover();
 			}
 			else if (State == State.Terminated)
 			{
@@ -632,6 +638,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			barsProcessed++;
 
 			DrainCompletedTrades();
+
+			// Flat means the entry that was holding the position is finished with. Read after
+			// DrainCompletedTrades so a halt fired in there still has the label to exit with.
+			if (Position.MarketPosition == MarketPosition.Flat)
+				activeEntryLabel = null;
 
 			int timeOfDay = ToTime(Time[0]);
 
@@ -705,13 +716,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			// End-of-day flatten outranks everything.
+			//
+			// The close is re-issued on every bar it is still needed, rather than once. A
+			// single attempt means one ignored or rejected exit carries the position through
+			// the halt and into the next session; NinjaTrader ignores a duplicate exit while
+			// one is already working, so repeating it costs nothing and is self-healing. The
+			// log line stays a one-off - a nightly message is a message, a nightly stream of
+			// them is wallpaper.
 			if (risk.ShouldFlatten(timeOfDay))
 			{
-				if (Position.MarketPosition != MarketPosition.Flat && !flattenedForDay)
+				if (Position.MarketPosition != MarketPosition.Flat)
 				{
-					Log(string.Format("Flatten time {0:000000} reached - closing position.", effectiveFlatten));
+					if (!flattenedForDay)
+					{
+						Log(string.Format("Flatten time {0:000000} reached - closing position.", effectiveFlatten));
+						flattenedForDay = true;
+					}
+
 					CloseCurrentPosition();
-					flattenedForDay = true;
 				}
 
 				return;
@@ -928,6 +950,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			previousZoneTouched = false;
 
 			flattenedForDay = false;
+			haltCloseLogged = false;
 			overnightHigh = double.MinValue;
 			overnightLow = double.MaxValue;
 			openingRangeHigh = double.MinValue;
@@ -1187,8 +1210,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			SetStopLoss(label, CalculationMode.Price, stopPrice, false);
 
-			if (targetPrice > 0)
-				SetProfitTarget(label, CalculationMode.Price, targetPrice);
+			// Set methods are sticky: a price registered against a signal name stays registered
+			// until it is overwritten. Skipping the call when there is no target left the
+			// previous trade's target attached to the next entry sharing the label - a target
+			// derived from a different swing, at a price with no relationship to this entry.
+			// Every path through the engine produces a target, so this is a guard rather than a
+			// live bug, but a silent one is exactly what it would have been.
+			if (targetPrice <= 0)
+			{
+				Log(string.Format("Entry skipped: no target price was produced for {0}. {1}", label, result.Detail));
+				return;
+			}
+
+			SetProfitTarget(label, CalculationMode.Price, targetPrice);
 
 			// Submitted against the fine series when there is one, so the fill - and the stop
 			// and target attached to this entry - resolve on its bars rather than the
@@ -1209,6 +1243,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				EnterShort(contracts, label);
 			}
 
+			activeEntryLabel = label;
 			risk.RecordEntry();
 			dayEntries++;
 			totalEntries++;
@@ -1251,12 +1286,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 				result.Detail, sizingReason));
 		}
 
+		/// <summary>
+		/// Flatten, on the same Bars object the entry was submitted against.
+		///
+		/// This used to call the no-argument ExitLong()/ExitShort(), which submit against the
+		/// series currently in progress - always the primary, since that is the only branch
+		/// that reaches here. With entries routed to the fill series that is the wrong Bars
+		/// object, and the managed approach ignores an exit whose Bars object does not match
+		/// the entry's. The flatten and the risk halt were both liable to do nothing at all
+		/// and log that they had closed the position. Naming the entry signal as well means
+		/// the exit is matched to its entry rather than to whatever happens to be open.
+		/// </summary>
 		private void CloseCurrentPosition()
 		{
-			if (Position.MarketPosition == MarketPosition.Long)
-				ExitLong();
-			else if (Position.MarketPosition == MarketPosition.Short)
-				ExitShort();
+			if (Position.MarketPosition == MarketPosition.Flat)
+				return;
+
+			bool longPosition = Position.MarketPosition == MarketPosition.Long;
+			int quantity = Position.Quantity;
+			int series = idxFill >= 0 ? idxFill : 0;
+			string exitName = longPosition ? "exitLong" : "exitShort";
+
+			// Empty means "whatever entry is holding this", which is the right answer when no
+			// entry of ours is on record - a position left by a previous instance, say.
+			string fromEntry = activeEntryLabel ?? string.Empty;
+
+			if (longPosition)
+				ExitLong(series, quantity, exitName, fromEntry);
+			else
+				ExitShort(series, quantity, exitName, fromEntry);
 		}
 
 		private void DrainCompletedTrades()
@@ -1275,16 +1333,31 @@ namespace NinjaTrader.NinjaScript.Strategies
 					trade.ProfitCurrency, risk.DailyRealisedPnL, risk.TradesToday, risk.ConsecutiveLosses));
 			}
 
+			// Re-issued each bar for the same reason as the flatten, and logged once so a
+			// position that takes several bars to close does not fill the window.
 			if (risk.IsHaltedForDay && Position.MarketPosition != MarketPosition.Flat)
 			{
-				Log("Risk halt with open position - closing. " + risk.HaltReason);
+				if (!haltCloseLogged)
+				{
+					haltCloseLogged = true;
+					Log("Risk halt with open position - closing. " + risk.HaltReason);
+				}
+
 				CloseCurrentPosition();
 			}
 		}
 
+		/// <summary>
+		/// Connection health, which gates new entries.
+		///
+		/// Only while live. This fires during startup too, and a status arriving mid-replay
+		/// used to latch the gate shut for the rest of the historical run - so the replay
+		/// would silently stop taking setups partway through and the funnel would blame the
+		/// risk gate. A replay has no connection to lose: every bar in it already happened.
+		/// </summary>
 		protected override void OnConnectionStatusUpdate(ConnectionStatusEventArgs e)
 		{
-			if (risk == null)
+			if (risk == null || State != State.Realtime)
 				return;
 
 			bool down = e.Status != ConnectionStatus.Connected || e.PriceStatus != ConnectionStatus.Connected;
@@ -1672,6 +1745,66 @@ namespace NinjaTrader.NinjaScript.Strategies
 				ZoneMode, RetestZoneAtr, MaxBarsShiftToRetest, RequireConfirmationClose ? "required" : "not required"));
 			Print(string.Format("  Exits        : stop {0:N2} ATR past the previous swing, target {1} ticks short of the next one, min {2:N2}R",
 				StopBufferAtr, TargetBufferTicks, MinRewardRisk));
+
+			Print("===================================================================");
+		}
+
+		/// <summary>
+		/// Printed at the handover from historical replay to live data.
+		///
+		/// Enabling a strategy replays every loaded bar first and fills its trades against
+		/// them. Those fills are simulated - no order was ever sent - but they are real to
+		/// everything inside this instance: they count towards the day's trade cap, they arm
+		/// the consecutive-loss halt, and if the replay ends holding a position, StartBehavior
+		/// makes the strategy wait for that virtual position to close before it will trade
+		/// live. Deactivating and reactivating therefore hands the live session a set of
+		/// counters it did not earn, and the only symptom is a strategy that quietly declines
+		/// to trade. This states what was inherited, so that is visible rather than mysterious.
+		/// </summary>
+		private void LogRealtimeHandover()
+		{
+			if (!EnableLogging)
+				return;
+
+			Print("=== Socrates NQ - live from here ==================================");
+			Print(string.Format("  Sizing          : {0} contract(s), max {1}, {2}", FixedContracts, MaxContracts, DescribeStop()));
+			Print(string.Format("  Daily loss cap  : {0}", DescribeDailyCap()));
+			Print(string.Format("  Confirmations   : VIX {0}, leaders {1}", VixMode, BreadthMode));
+
+			// Everything below came out of the replay, not out of the market.
+			Print(string.Format("  Simulated first : {0} bar(s) replayed, {1} trade(s) filled against history.",
+				barsProcessed, processedTradeCount));
+
+			if (risk != null)
+			{
+				Print(string.Format("  Carried into today: {0} of {1} trades used, {2} consecutive loss(es), day P/L {3:C}.",
+					risk.TradesToday,
+					MaxTradesPerDay > 0 ? MaxTradesPerDay.ToString() : "unlimited",
+					risk.ConsecutiveLosses,
+					risk.DailyRealisedPnL));
+
+				if (risk.IsHaltedForDay)
+				{
+					Print("  HALTED for the day on replayed trades: " + risk.HaltReason);
+					Print("           No live entry will be taken until the session rolls. Disable the halt");
+					Print("           or restart after the roll if that is not what you want.");
+				}
+				else if (MaxTradesPerDay > 0 && risk.TradesToday >= MaxTradesPerDay)
+				{
+					Print("  Trade cap already reached on replayed trades - no live entry until the roll.");
+				}
+			}
+
+			if (Position.MarketPosition != MarketPosition.Flat)
+			{
+				Print(string.Format("  Replay ended holding {0} {1} @ {2:N2}. StartBehavior is {3}, so live orders",
+					Position.Quantity, Position.MarketPosition, Position.AveragePrice, StartBehavior));
+				Print("           wait until that simulated position is flat.");
+			}
+
+			if (setup != null && setup.State != SetupState.Idle)
+				Print(string.Format("  Setup in flight : {0}{1} - carried over from the replay.",
+					setup.State, setup.ActiveIsContinuation ? " (continuation)" : string.Empty));
 
 			Print("===================================================================");
 		}
@@ -2277,13 +2410,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		#region Properties
 
+		// Minimum 1, not 0. At zero the sizer returns no contracts, every setup is refused as
+		// a sizing failure, and the strategy looks broken rather than misconfigured.
 		[NinjaScriptProperty]
-		[Range(0, int.MaxValue)]
+		[Range(1, int.MaxValue)]
 		[Display(Name = "Fixed contracts", GroupName = "1. Position Sizing", Order = 0)]
 		public int FixedContracts { get; set; }
 
 		[NinjaScriptProperty]
-		[Range(0, int.MaxValue)]
+		[Range(1, int.MaxValue)]
 		[Display(Name = "Max contracts", Description = "Hard ceiling on size. The last line of defence against a sizing bug.", GroupName = "1. Position Sizing", Order = 2)]
 		public int MaxContracts { get; set; }
 
