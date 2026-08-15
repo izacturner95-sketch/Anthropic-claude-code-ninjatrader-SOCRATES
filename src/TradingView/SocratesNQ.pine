@@ -827,19 +827,28 @@ var int   rrCount = 0
 
 qty = math.min(fixedContracts, maxContracts)
 
+// Four branches, every order id a literal.
+//
+// This was one call with the id and the direction both built from ternaries. That is the
+// compact way to write it and it puts a series string where the broker emulator wants a
+// name it can match an exit to, and a conditional where strategy.long/strategy.short are
+// expected. Neither is worth the two saved lines while orders are going missing between
+// being submitted and being recorded: the id is the only link between an entry and its
+// exit, and a link that resolves at runtime is a link that can fail to.
 if canEnter
-    tradeId = entryCont ? (entryLong ? "contLong" : "contShort") : (entryLong ? "sweepLong" : "sweepShort")
-
-    // Two calls rather than one with a ternary direction. strategy.long/strategy.short
-    // are not ordinary values and a conditional between them is the kind of thing Pine
-    // accepts in one version and rejects in the next; there is nothing to gain by
-    // finding out which this is.
-    if entryLong
-        strategy.entry(tradeId, strategy.long, qty = qty)
+    if entryLong and entryCont
+        strategy.entry("contLong", strategy.long, qty = qty)
+        strategy.exit("contLong x", from_entry = "contLong", stop = entryStop, limit = entryTarget)
+    else if entryLong
+        strategy.entry("sweepLong", strategy.long, qty = qty)
+        strategy.exit("sweepLong x", from_entry = "sweepLong", stop = entryStop, limit = entryTarget)
+    else if entryCont
+        strategy.entry("contShort", strategy.short, qty = qty)
+        strategy.exit("contShort x", from_entry = "contShort", stop = entryStop, limit = entryTarget)
     else
-        strategy.entry(tradeId, strategy.short, qty = qty)
+        strategy.entry("sweepShort", strategy.short, qty = qty)
+        strategy.exit("sweepShort x", from_entry = "sweepShort", stop = entryStop, limit = entryTarget)
 
-    strategy.exit(tradeId + " x", from_entry = tradeId, stop = entryStop, limit = entryTarget)
     nEntries += 1
     tradesToday += 1
     liveStop := entryStop
@@ -947,7 +956,7 @@ if showVisuals and showPanel and barstate.islast
 // above 0 with entries at 0 sends you to the rejection rows underneath.
 // ═══════════════════════════════════════════════════════════════════════════
 
-var table funnel = table.new(position.bottom_right, 2, 17, bgcolor = color.new(color.black, 20), border_width = 1)
+var table funnel = table.new(position.bottom_right, 2, 19, bgcolor = color.new(color.black, 20), border_width = 1)
 
 // Global scope only, so it cannot be folded into the block below.
 funnelRow(int row, string label, string value, color valueColor) =>
@@ -968,22 +977,36 @@ if showVisuals and showFunnel and barstate.islast
     funnelRow(4, "structure shifts", str.tostring(nShifts), nShifts > 0 ? live : dead)
     funnelRow(5, "retests reached", str.tostring(nTouches), nTouches > 0 ? live : dead)
     funnelRow(6, "setups completed", str.tostring(nSetups), nSetups > 0 ? live : dead)
-    funnelRow(7, "ENTRIES", str.tostring(nEntries), nEntries > 0 ? color.lime : dead)
 
-    funnelRow(8, "-- setups lost to --", "", dim)
-    funnelRow(9, "no shift in time", str.tostring(dieNoShift), dim)
-    funnelRow(10, "no retest in time", str.tostring(dieNoRetest), dim)
-    funnelRow(11, "level gave way", str.tostring(dieInvalid), dim)
-    funnelRow(12, "risk over ceiling", str.tostring(dieTooWide), dim)
-    funnelRow(13, "reward too small", str.tostring(diePoorRR), dim)
+    // The two numbers that split the problem in half. "submitted" counts calls to
+    // strategy.entry made by this script; "tester has" is what the broker emulator
+    // actually recorded. Equal means any remaining problem is upstream, in the logic
+    // above. Different means the orders are being refused after submission, and no
+    // amount of tuning the strategy will help - it is the account model, not the setup.
+    testerTrades = strategy.closedtrades + strategy.opentrades
+    funnelRow(7, "ENTRIES submitted", str.tostring(nEntries), nEntries > 0 ? color.lime : dead)
+    funnelRow(8, "tester has", str.tostring(testerTrades),
+         nEntries == testerTrades ? (testerTrades > 0 ? color.lime : dim) : color.red)
 
-    // One line, because on a healthy run every one of these is zero and eight rows of
-    // zeros is noise. When something is refusing entries it is the only line that moves.
-    funnelRow(14, "-- entries refused --", "", dim)
-    funnelRow(15, "pos/sess/halt/cap",
+    if nEntries != testerTrades
+        funnelRow(9, "ORDERS REFUSED", str.tostring(nEntries - testerTrades) + " lost", color.red)
+    else
+        funnelRow(9, "position now", str.tostring(strategy.position_size), dim)
+
+    funnelRow(10, "-- setups lost to --", "", dim)
+    funnelRow(11, "no shift in time", str.tostring(dieNoShift), dim)
+    funnelRow(12, "no retest in time", str.tostring(dieNoRetest), dim)
+    funnelRow(13, "level gave way", str.tostring(dieInvalid), dim)
+    funnelRow(14, "risk over ceiling", str.tostring(dieTooWide), dim)
+    funnelRow(15, "reward too small", str.tostring(diePoorRR), dim)
+
+    // One line each, because on a healthy run every one of these is zero and eight rows
+    // of zeros is noise. When something is refusing entries it is the only line moving.
+    funnelRow(16, "-- entries refused --", "", dim)
+    funnelRow(17, "pos/sess/halt/cap",
          str.tostring(rejPosition) + "/" + str.tostring(rejSession) + "/" + str.tostring(rejHalt) + "/" + str.tostring(rejCap),
          rejPosition + rejSession + rejHalt + rejCap > 0 ? color.orange : dim)
-    funnelRow(16, "stop/budget/vix/ldr",
+    funnelRow(18, "stop/budget/vix/ldr",
          str.tostring(rejStopBand) + "/" + str.tostring(rejBudget) + "/" + str.tostring(rejVix) + "/" + str.tostring(rejBreadth),
          rejStopBand + rejBudget + rejVix + rejBreadth > 0 ? color.orange : dim)
 
