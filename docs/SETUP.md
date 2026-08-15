@@ -175,9 +175,14 @@ hard — requiring the structure-breaking bar to span a full ATR is demanding on
 
 ## 8. Importing your own data
 
-NinjaTrader's own feed carries no US equities, so step 6 has nothing to read unless you
-supply it. `tools/to_ninjatrader_csv.py` converts most OHLCV exports into the format the
-importer accepts.
+Step 6 now runs on the CME single stock futures — `SAAPL`, `SMSFT` and the rest — which
+your feed does carry, so importing is no longer the only route to it. It stays worth
+doing for one reason: those contracts carry only a few weeks of history each, and a
+backtest with step 6 on cannot start before the youngest of them. Importing cash-equity
+bars is how you test the step over a range longer than the current contract has existed.
+
+`tools/to_ninjatrader_csv.py` converts most OHLCV exports into the format the importer
+accepts.
 
 ```
 python3 tools/to_ninjatrader_csv.py AAPL_5min.csv --period 5 --stamp open > AAPL.txt
@@ -220,7 +225,13 @@ yesterday", which is a different signal and worth judging on its own.
 
 Whatever you import must cover the **whole** backtest range. A multi-series backtest
 cannot start before its shortest series, so a leader beginning in August truncates
-everything to August — the banner names the series responsible.
+everything to August — the banner names the series responsible. This is exactly what the
+stock futures do on their own, which is the reason to import at all.
+
+If you import cash equities to get the range, point **Leader symbols** back at `AAPL,
+MSFT, NVDA, AMZN, META, GOOGL, TSLA` and set **Leaders open / close** to `093000` and
+`160000` — imported share data is cash-session only, and leaving the window at `0`/`0`
+would have the step reaching for overnight bars that are not in the file.
 
 ## 9. Disabling and re-enabling on a live chart
 

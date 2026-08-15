@@ -89,13 +89,12 @@ The engine classes are plain C# with no NinjaTrader dependencies. Only
 | NQ daily, weekly | Prior period levels and pivots | always |
 | NQ 4-hour | 4-hour pivots | **Use 4-hour pivots** on |
 | `VX` | Step 5 | **VIX mode** not Off |
-| AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA | Step 6 | **Breadth mode** not Off |
+| `SAAPL`, `SMSFT`, `SNVDA`, `SAMZN`, `SMETA`, `SGOOGL`, `STSLA` | Step 6 | **Breadth mode** not Off |
 
 **Steps 5 and 6 ship Off.** With both on the strategy loads twelve series, and every
 one must exist in your feed or NinjaTrader will not start the strategy at all — it
-writes the reason to the Log tab, prints nothing, and trades nothing. A futures-only
-feed carries none of the eight index and equity symbols. Turn each step on once you
-have confirmed its symbols open on a chart.
+writes the reason to the Log tab, prints nothing, and trades nothing. Turn each step on
+once you have confirmed its symbols open on a chart.
 
 **Trading hours** defaults to Extended — 18:00 to 16:45 ET, the full Globex session,
 flat by 16:55. Regular is 09:45–15:45; Custom takes the three HHmmss times, and may wrap
@@ -110,16 +109,25 @@ rather than tracking spot exactly, which does not matter here — the step reads
 and levels, not the absolute number. Point **VIX symbol** back at `^VIX` if you want the
 index, and the banner will warn you when that is combined with extended hours.
 
-**Step 6 is skipped outside the leaders' session.** There is no overnight ticker for
-AAPL — it is AAPL in every session, and from 20:00 to 04:00 ET it is dark everywhere.
-So the step applies inside **Leaders open / close** (09:30–16:00 ET by default) and is
-skipped outside it, rather than failing every overnight setup for want of data it was
-never going to have. A shut equity market is not evidence against a trade. The run
-summary counts the skips.
+**Step 6 uses CME single stock futures**, `SAAPL` and the rest — not the cash shares.
+NinjaTrader's feed carries no US equities at all, so `AAPL` was never going to supply
+this step here. The futures suit it better anyway: they run Globex hours, so breadth can
+confirm an overnight setup instead of standing aside for two thirds of the session.
+
+**Leaders open / close** therefore ships at `0` / `0`, meaning around the clock. The step
+is skipped where the leaders have no data, decided by the staleness guard reading whether
+bars actually arrived rather than by a hardcoded clock. Set a window to narrow it —
+`093000` to `160000` restricts step 6 to the cash session.
 
 That skip is deliberately narrow: it triggers when leaders traded and then stopped, not
 when they never produced a bar at all. A symbol your feed does not carry still fails
 loudly instead of quietly disabling the step.
+
+Two costs come with the futures. History is **contract-based and short** — a contract
+listed at the start of the month carries data only from then — so a backtest with step 6
+on truncates to the youngest series, and the startup banner names the one responsible.
+And they are thinner than the shares, so a leader can read flat while the underlying is
+moving. Judge **Min leader move (%)** against that, not against equity behaviour.
 
 The prior-day and prior-week levels need history: three weeks of loaded data before
 weekly pivots exist. Short loads are not fatal — the missing levels are skipped, a

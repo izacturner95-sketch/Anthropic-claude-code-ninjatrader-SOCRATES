@@ -381,18 +381,34 @@ namespace NinjaTrader.NinjaScript.Strategies
 				VixKeyLevelTolerance = 0.35;
 
 				// --- Step 6: breadth ---
+				//
+				// CME single stock futures, not the cash shares. NinjaTrader's feed carries no
+				// US equities at all - support confirmed it - so AAPL and the rest could never
+				// have supplied this step here. The futures are the only route to the data on
+				// this platform, and they are better suited anyway: they run Globex hours
+				// rather than 09:30-16:00, so breadth can confirm an overnight setup instead
+				// of standing aside for two thirds of the session.
+				//
+				// Two costs come with them. History is contract-based and short - a contract
+				// listed at the start of the month carries data only from then - so a backtest
+				// with step 6 on truncates to the youngest series, and the startup banner names
+				// it. And they are thinner than the shares, so a leader can be genuinely flat
+				// while the underlying is moving.
 				BreadthMode = ConfirmationMode.Off;
-				BreadthSymbols = "AAPL,MSFT,NVDA,AMZN,META,GOOGL,TSLA";
+				BreadthSymbols = "SAAPL,SMSFT,SNVDA,SAMZN,SMETA,SGOOGL,STSLA";
 				BreadthBarMinutes = 5;
 				BreadthMinAligned = 5;
 				BreadthMinMovePercent = 0.05;
 
-				// The leaders only trade the cash session, and there is no ticker that fixes
-				// that - AAPL is AAPL, and 20:00 to 04:00 ET it is dark everywhere. So step 6
-				// applies inside this window and is skipped outside it, rather than failing
-				// every overnight setup for want of data it was never going to have.
-				BreadthActiveStart = 93000;
-				BreadthActiveEnd = 160000;
+				// Around the clock. The window existed because the cash shares were dark
+				// 20:00-04:00 and no ticker fixed it; futures trade nearly 23 hours, so a
+				// clock-based skip would now be turning the step off during hours it can
+				// actually answer. Start equal to end means always on, and the staleness guard
+				// inside the step does the skipping instead - it reads whether data arrived
+				// rather than whether the clock says it should have, which is the right test
+				// for a session this file does not hardcode. Set a window here to narrow it.
+				BreadthActiveStart = 0;
+				BreadthActiveEnd = 0;
 
 				ShowChartVisuals = true;
 				ShowSetupZones = true;
@@ -1709,10 +1725,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			LogRiskConsistency();
 
-			if (TradingHours == TradingHoursMode.ExtendedHours && BreadthMode != ConfirmationMode.Off)
+			if (BreadthMode != ConfirmationMode.Off)
 			{
-				Print(string.Format("  Step 6 applies {0:000000}-{1:000000} only; outside it the leaders are shut and it is skipped.",
-					BreadthActiveStart, BreadthActiveEnd));
+				Print(BreadthActiveStart == BreadthActiveEnd
+					? "  Step 6 applies around the clock; the staleness guard skips it where the leaders have no data."
+					: string.Format("  Step 6 applies {0:000000}-{1:000000} only; outside it the step is skipped, not failed.",
+						BreadthActiveStart, BreadthActiveEnd));
+
+				// A cash ticker here is not a slow step, it is a strategy that will not start:
+				// NinjaTrader refuses to run when a series cannot be resolved, and writes the
+				// reason to the Log tab rather than the Output window anyone is watching.
+				if (!string.IsNullOrEmpty(BreadthSymbols) && BreadthSymbols.IndexOf('S') != 0)
+				{
+					Print("  NOTE: leader symbols should be the CME single stock futures (SAAPL, SMSFT, ...).");
+					Print("        This feed carries no cash equities, and an unresolvable symbol stops the");
+					Print("        strategy before it prints anything - check the Log tab if it goes quiet.");
+				}
 			}
 
 			// The ^VIX index is only disseminated around the cash session, so on a Globex
@@ -2663,7 +2691,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public ConfirmationMode BreadthMode { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Leader symbols", Description = "Comma separated. Each needs data in your feed.", GroupName = "8. Step 6 - Leaders", Order = 1)]
+		[Display(Name = "Leader symbols", Description = "Comma separated. CME single stock futures - SAAPL, SMSFT and so on - not the cash shares, which this feed does not carry. Each must open on a chart or the strategy will not start at all. History is contract-based and short, so a backtest with this step on truncates to the youngest of them.", GroupName = "8. Step 6 - Leaders", Order = 1)]
 		public string BreadthSymbols { get; set; }
 
 		[NinjaScriptProperty]
@@ -2683,7 +2711,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		[NinjaScriptProperty]
 		[Range(0, 235959)]
-		[Display(Name = "Leaders open (HHmmss)", Description = "Step 6 applies only inside this window and is skipped outside it. The leaders trade 09:30-16:00 ET and there is no overnight ticker for them. Set start equal to end to apply the step around the clock.", GroupName = "8. Step 6 - Leaders", Order = 5)]
+		[Display(Name = "Leaders open (HHmmss)", Description = "Step 6 applies only inside this window and is skipped outside it. Ships at 0/0, meaning around the clock: the leaders are futures and run Globex hours, so the staleness guard decides when there is nothing to read rather than the clock. Set a window to narrow it - 093000 to 160000 restricts the step to the cash session.", GroupName = "8. Step 6 - Leaders", Order = 5)]
 		public int BreadthActiveStart { get; set; }
 
 		[NinjaScriptProperty]

@@ -328,13 +328,27 @@ scores 0.6, which matters when confidence sizing is on.
 If some symbols have no data, the threshold scales down proportionally rather than
 blocking every trade.
 
-**Outside the leaders' session the step is skipped, not failed.** There is no overnight
-ticker for these names — AAPL is AAPL in every session, extended-hours equity trading
-runs roughly 04:00–09:30 and 16:00–20:00 ET, and from 20:00 to 04:00 it is dark
-everywhere. Requiring participation from a shut market would refuse every overnight
-setup for want of data that does not exist. So the step applies inside
-`Leaders open`–`Leaders close`, 09:30–16:00 ET by default, and is skipped outside it.
-The run summary counts the skips so the step's real coverage is visible.
+**The leaders are CME single stock futures — `SAAPL`, `SMSFT` and the rest — not the
+cash shares.** This is forced rather than chosen: NinjaTrader's feed carries no US
+equities, so the shares could never have supplied the step on this platform. It happens
+to be the better instrument for the job. The shares trade 09:30–16:00 with extended
+hours reaching roughly 04:00–20:00 and nothing at all from 20:00 to 04:00; the futures
+run Globex hours, so breadth can confirm a 2am setup rather than standing aside for two
+thirds of the session.
+
+Two costs come with them. History is contract-based and short, so a backtest with the
+step on truncates to the youngest series — the startup banner names it. And they are
+thinner than the shares, so a leader can read flat while the underlying is moving, which
+is worth remembering when judging `Min leader move (%)`.
+
+**Where the leaders have no data the step is skipped, not failed.** Requiring
+participation from a market that is shut would refuse setups for want of data that does
+not exist. `Leaders open`–`Leaders close` now ships at `0`/`0` — around the clock — and
+the skipping is done by the staleness guard, which reads whether bars actually arrived
+rather than whether a hardcoded clock says they should have. That is the right test for
+a session this file does not want to hardcode, and it survives a change of contract or
+exchange hours. Setting a window narrows it; `093000`–`160000` restricts step 6 to the
+cash session. The run summary counts the skips so the step's real coverage is visible.
 
 The skip is deliberately narrow. It applies when the leaders traded and then went
 quiet — a closed market — and not when a symbol has never produced a bar at all. That
