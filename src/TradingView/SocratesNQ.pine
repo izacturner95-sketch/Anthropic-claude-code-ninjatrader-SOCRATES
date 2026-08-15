@@ -110,6 +110,8 @@ showZones   = input.bool(true, "Show setup zones", group = gChart)
 showLevels  = input.bool(false, "Show reference levels", group = gChart,
      tooltip = "Off by default. There are usually thirty-odd and they clutter the chart.")
 showPanel   = input.bool(true, "Show stats panel", group = gChart)
+showFunnel  = input.bool(true, "Show funnel panel", group = gChart,
+     tooltip = "How far down the six steps price actually got, and what turned each setup away. This is the panel to read when the strategy takes no trades - it names the step that is stopping them.")
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -188,10 +190,18 @@ swingBeyond(array<float> prices, float px, float minDistance, bool above) =>
 isBullish(bool buySide, bool cont) => cont ? buySide : not buySide
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Session arithmetic - HHmmss integers in exchange time, as in NinjaTrader
+// Session arithmetic - HHmmss integers in Eastern time, as in NinjaTrader
 // ═══════════════════════════════════════════════════════════════════════════
 
-tod = hour * 10000 + minute * 100 + second
+// Every window in this strategy is quoted in ET, because that is how the Globex
+// session, the cash open and the leaders' hours are all defined. Bare hour/minute
+// return the chart's exchange timezone, which for CME_MINI:NQ1! is Chicago - an hour
+// behind. Left alone that shifts every window: the opening range captured 10:30-10:45
+// ET instead of 09:30-09:45, and the flatten period ran straight through the 17:00 CT
+// reopen. The timezone is named explicitly so it is right on any chart.
+tz = "America/New_York"
+
+tod = hour(time, tz) * 10000 + minute(time, tz) * 100 + second(time, tz)
 
 sessStart = tradingHours == "Regular" ? 94500  : tradingHours == "Extended" ? 180000 : customStart
 sessEnd   = tradingHours == "Regular" ? 154500 : tradingHours == "Extended" ? 164500 : customEnd
@@ -374,6 +384,44 @@ if array.size(blocks) > 0
         array.push(levels, Level.new((b.top + b.bottom) / 2.0, (b.top - b.bottom) / 2.0, false))
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Funnel counters
+//
+// A strategy that trades nothing is indistinguishable from one that never ran, and
+// on TradingView there is no Output window to print to. These count how far price
+// got down the sequence, so "no trades" resolves to a step rather than a shrug.
+// ═══════════════════════════════════════════════════════════════════════════
+
+var int nSweeps     = 0   // reclaims: penetration then back inside
+var int nBreaks     = 0   // penetrations that held, when continuations are on
+var int nShifts     = 0   // structure broken with displacement
+var int nTouches    = 0   // retest zone reached
+var int nSetups     = 0   // full sequence, stop and target agreed
+var int nEntries    = 0   // orders actually submitted
+
+var int dieNoShift  = 0   // sweep expired waiting for structure
+var int dieNoRetest = 0   // shift expired waiting for the retest
+var int dieInvalid  = 0   // price went back through the level
+var int dieTooWide  = 0   // structure or entry risk over the ATR ceiling
+var int diePoorRR   = 0   // target did not pay for the stop
+
+var int rejPosition = 0   // already in a trade
+var int rejSession  = 0   // outside the entry window, or in the flatten period
+var int rejHalt     = 0   // consecutive losses or the daily cap
+var int rejCap      = 0   // trades-per-day ceiling
+var int rejStopBand = 0   // stop outside the min/max tick band
+var int rejBudget   = 0   // risk larger than the day's remaining budget
+var int rejVix      = 0   // step 5
+var int rejBreadth  = 0   // step 6
+
+// The stop distribution over completed setups. Choosing the tick band without it is
+// guesswork - on the NinjaTrader side the band and the distribution did not overlap
+// at all for a while, and nothing said so.
+var int   stopSamples = 0
+var float stopMin     = na
+var float stopMax     = na
+var float stopSum     = 0.0
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Step 2 - liquidity. Penetration then reclaim; or penetration that holds.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -473,6 +521,12 @@ else
             evExtremeBar := bar_index
         sellActive := false
 
+if evValid
+    if evCont
+        nBreaks += 1
+    else
+        nSweeps += 1
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Steps 3 and 4 - structure shift, then retest
 // ═══════════════════════════════════════════════════════════════════════════
@@ -528,6 +582,7 @@ if adopt
 else if stState == 1
     bull = isBullish(stBuySide, false)
     if bar_index - stSweepBar > maxBarsToShift
+        dieNoShift += 1
         stState := 0
     else
         cand = bull ? swingAfter(swingHighs, swingHighBars, stExtremeBar) : swingAfter(swingLows, swingLowBars, stExtremeBar)
@@ -539,8 +594,10 @@ else if stState == 1
             structDist = math.abs(stStructPx - stExtreme)
             enoughDisplacement = minDisplaceAtr <= 0 or (high - low) >= atr * minDisplaceAtr
             if maxStructDist > 0 and structDist > atr * maxStructDist
+                dieTooWide += 1
                 stState := 0
             else if enoughDisplacement
+                nShifts += 1
                 stShiftBar := bar_index
                 stZoneCenter := stStructPx
                 stZoneHalf := math.max(atr * retestZoneAtr, syminfo.mintick)
@@ -560,16 +617,30 @@ else if stState == 2
     invalid = stCont ? (bull ? close < stLevelPx - stZoneHalf : close > stLevelPx + stZoneHalf) : (bull ? low < stExtreme : high > stExtreme)
 
     if bar_index - stShiftBar > maxBarsToRetest or invalid
+        if invalid
+            dieInvalid += 1
+        else
+            dieNoRetest += 1
         stState := 0
     else
         zoneUp = stZoneCenter + stZoneHalf
         zoneDn = stZoneCenter - stZoneHalf
         if not stZoneTouched and low <= zoneUp and high >= zoneDn
             stZoneTouched := true
+            nTouches += 1
         confirms = not requireConfirm or (bull ? (close > open and close > zoneDn) : (close < open and close < zoneUp))
         if stZoneTouched and confirms
             stopPx = bull ? stRetestExtreme - atr * stopBufferAtr : stRetestExtreme + atr * stopBufferAtr
             risk = math.abs(close - stopPx)
+
+            // Sampled for every setup that gets this far, whether or not it goes on to
+            // pass the tick band, so the band can be read off the distribution.
+            ticks = risk / syminfo.mintick
+            stopSamples += 1
+            stopSum += ticks
+            stopMin := na(stopMin) ? ticks : math.min(stopMin, ticks)
+            stopMax := na(stopMax) ? ticks : math.max(stopMax, ticks)
+
             if risk > 0 and (maxSetupRisk <= 0 or risk <= atr * maxSetupRisk)
                 tBuf = targetBufferTk * syminfo.mintick
                 minTargetDist = tBuf + (minRewardRisk > 0 ? risk * minRewardRisk : 0)
@@ -580,12 +651,19 @@ else if stState == 2
                 else if targetRFallback > 0
                     targetPx := bull ? close + risk * targetRFallback : close - risk * targetRFallback
                 if not na(targetPx) and (minRewardRisk <= 0 or math.abs(targetPx - close) >= risk * minRewardRisk)
+                    nSetups += 1
                     entryFire := true
                     entryLong := bull
                     entryStop := stopPx
                     entryTarget := targetPx
                     entryCont := stCont
                     stState := 0
+                else
+                    diePoorRR += 1
+                    stState := 0
+            else
+                dieTooWide += 1
+                stState := 0
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Steps 5 and 6 - confirmations
@@ -651,6 +729,27 @@ canEnter = entryFire and strategy.position_size == 0 and withinSession and not s
      stopTicks >= minStopTicks and stopTicks <= maxStopTicks and riskDollars <= budgetLeft and
      vixAgrees and breadthAgrees
 
+// Which gate turned the setup away, in the order the gate itself applies them. Only the
+// first reason is counted, so the columns sum to the setups refused rather than to the
+// number of tests that happened to be failing at the time.
+if entryFire and not canEnter
+    if strategy.position_size != 0
+        rejPosition += 1
+    else if not withinSession or shouldFlatten
+        rejSession += 1
+    else if haltedToday
+        rejHalt += 1
+    else if maxTradesDay > 0 and tradesToday >= maxTradesDay
+        rejCap += 1
+    else if stopTicks < minStopTicks or stopTicks > maxStopTicks
+        rejStopBand += 1
+    else if riskDollars > budgetLeft
+        rejBudget += 1
+    else if not vixAgrees
+        rejVix += 1
+    else
+        rejBreadth += 1
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Orders
 // ═══════════════════════════════════════════════════════════════════════════
@@ -663,8 +762,18 @@ qty = math.min(fixedContracts, maxContracts)
 
 if canEnter
     tradeId = entryCont ? (entryLong ? "contLong" : "contShort") : (entryLong ? "sweepLong" : "sweepShort")
-    strategy.entry(tradeId, entryLong ? strategy.long : strategy.short, qty = qty)
+
+    // Two calls rather than one with a ternary direction. strategy.long/strategy.short
+    // are not ordinary values and a conditional between them is the kind of thing Pine
+    // accepts in one version and rejects in the next; there is nothing to gain by
+    // finding out which this is.
+    if entryLong
+        strategy.entry(tradeId, strategy.long, qty = qty)
+    else
+        strategy.entry(tradeId, strategy.short, qty = qty)
+
     strategy.exit(tradeId + " x", from_entry = tradeId, stop = entryStop, limit = entryTarget)
+    nEntries += 1
     tradesToday += 1
     liveStop := entryStop
     liveTarget := entryTarget
@@ -745,8 +854,81 @@ if showVisuals and showPanel and barstate.islast
     table.cell(panel, 1, 8, haltedToday ? "yes" : "no", text_color = haltedToday ? color.orange : color.gray, text_size = size.small)
 
 // ═══════════════════════════════════════════════════════════════════════════
+// The funnel
+//
+// Read top to bottom and stop at the first zero: that is the step doing the refusing.
+// Levels at 0 means step 1 never built a book and nothing downstream can run. Sweeps
+// at 0 with levels present means the penetration threshold is out of reach. Setups
+// above 0 with entries at 0 sends you to the rejection rows underneath.
+// ═══════════════════════════════════════════════════════════════════════════
+
+var table funnel = table.new(position.bottom_right, 2, 17, bgcolor = color.new(color.black, 20), border_width = 1)
+
+// Global scope only, so it cannot be folded into the block below.
+funnelRow(int row, string label, string value, color valueColor) =>
+    table.cell(funnel, 0, row, label, text_color = color.gray, text_size = size.tiny,
+         text_halign = text.align_left)
+    table.cell(funnel, 1, row, value, text_color = valueColor, text_size = size.tiny,
+         text_halign = text.align_right)
+
+if showVisuals and showFunnel and barstate.islast
+    dead = color.new(color.red, 0)
+    live = color.new(color.white, 0)
+    dim  = color.new(color.gray, 0)
+
+    funnelRow(0, "FUNNEL", str.tostring(bar_index + 1) + " bars", color.silver)
+    funnelRow(1, "levels now", str.tostring(array.size(levels)), array.size(levels) > 0 ? live : dead)
+    funnelRow(2, "sweeps", str.tostring(nSweeps), nSweeps > 0 ? live : dead)
+    funnelRow(3, "breaks", enableCont ? str.tostring(nBreaks) : "off", enableCont ? (nBreaks > 0 ? live : dead) : dim)
+    funnelRow(4, "structure shifts", str.tostring(nShifts), nShifts > 0 ? live : dead)
+    funnelRow(5, "retests reached", str.tostring(nTouches), nTouches > 0 ? live : dead)
+    funnelRow(6, "setups completed", str.tostring(nSetups), nSetups > 0 ? live : dead)
+    funnelRow(7, "ENTRIES", str.tostring(nEntries), nEntries > 0 ? color.lime : dead)
+
+    funnelRow(8, "-- setups lost to --", "", dim)
+    funnelRow(9, "no shift in time", str.tostring(dieNoShift), dim)
+    funnelRow(10, "no retest in time", str.tostring(dieNoRetest), dim)
+    funnelRow(11, "level gave way", str.tostring(dieInvalid), dim)
+    funnelRow(12, "risk over ceiling", str.tostring(dieTooWide), dim)
+    funnelRow(13, "reward too small", str.tostring(diePoorRR), dim)
+
+    // One line, because on a healthy run every one of these is zero and eight rows of
+    // zeros is noise. When something is refusing entries it is the only line that moves.
+    funnelRow(14, "-- entries refused --", "", dim)
+    funnelRow(15, "pos/sess/halt/cap",
+         str.tostring(rejPosition) + "/" + str.tostring(rejSession) + "/" + str.tostring(rejHalt) + "/" + str.tostring(rejCap),
+         rejPosition + rejSession + rejHalt + rejCap > 0 ? color.orange : dim)
+    funnelRow(16, "stop/budget/vix/ldr",
+         str.tostring(rejStopBand) + "/" + str.tostring(rejBudget) + "/" + str.tostring(rejVix) + "/" + str.tostring(rejBreadth),
+         rejStopBand + rejBudget + rejVix + rejBreadth > 0 ? color.orange : dim)
+
+// The stop distribution, against the band that admits a trade. These have to overlap.
+// On the NinjaTrader build they did not - the band was 100 ticks and the setups were
+// arriving at 356 to 958 - and nothing in the output said so until this was added.
+var table stops = table.new(position.bottom_left, 1, 2, bgcolor = color.new(color.black, 20), border_width = 1)
+
+if showVisuals and showFunnel and barstate.islast
+    inBand = stopSamples > 0 and not na(stopMin) and stopMin <= maxStopTicks and stopMax >= minStopTicks
+
+    table.cell(stops, 0, 0, stopSamples > 0
+         ? "stop ticks over " + str.tostring(stopSamples) + " setups:  min " + str.tostring(stopMin, "#") +
+           "   mean " + str.tostring(stopSum / stopSamples, "#") + "   max " + str.tostring(stopMax, "#")
+         : "no setup has reached the stop calculation yet",
+         text_color = color.silver, text_size = size.tiny, text_halign = text.align_left)
+
+    table.cell(stops, 0, 1, "band admits " + str.tostring(minStopTicks) + "-" + str.tostring(maxStopTicks) +
+         (stopSamples == 0 ? "" : inBand ? "  (overlaps)" : "  <-- NO OVERLAP, every setup is refused here"),
+         text_color = stopSamples > 0 and not inBand ? color.red : color.gray,
+         text_size = size.tiny, text_halign = text.align_left)
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Differences from the NinjaTrader build
 // ═══════════════════════════════════════════════════════════════════════════
+//
+// If the Strategy Tester is empty, read the funnel panel in the bottom-right first and
+// stop at its first zero - that is the step doing the refusing. A panel that is not on
+// the chart at all means the script hit a runtime error rather than found no trades:
+// look for the red marker beside the script name and open it for the message.
 //
 // Better here:
 //   - VIX and US equities have data on TradingView, so steps 5 and 6 are testable. On a
@@ -765,8 +947,8 @@ if showVisuals and showPanel and barstate.islast
 //     instrument; Directional is what the NinjaTrader runs actually used.
 //   - Order block detection does not widen an overlapping existing block, it adds a new
 //     one. Twelve stay active either way.
-//   - No funnel counters. If a run produces no trades, the NinjaTrader build is still the
-//     better place to find out which step is stopping them.
+//   - No per-trade log. The funnel panel says which step is refusing, but not which bar,
+//     and there is no Output window to print a reason to.
 //
 // Carried over deliberately, because the NinjaTrader runs measured it:
 //   - The stop anchors to the retest pullback, not the swept extreme. The extreme
