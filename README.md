@@ -173,8 +173,12 @@ numbers: there is no 1-minute fill series, so a bar touching both stop and targe
 resolves on TradingView's own assumption; and commission and slippage live in the
 strategy's Properties tab rather than in the script, so they are zero until you set them.
 The trade is that TradingView carries VIX and US equity data, which makes steps 5 and 6
-testable there — on a futures-only NinjaTrader feed they are not. The full list of
-differences is a comment block at the bottom of the file.
+testable there — on a futures-only NinjaTrader feed they are not. Step 6 also has a
+**Leader hours** setting the NinjaTrader build has no equivalent for: on Extended it
+requests pre- and post-market data, 04:00–20:00 ET, so breadth applies across most of the
+Globex night instead of only the cash session. Nothing trades 20:00–04:00, so the step is
+still skipped through the small hours. The full list of differences is a comment block at
+the bottom of the file.
 
 ---
 

@@ -117,8 +117,13 @@ ldr6 = input.symbol("NASDAQ:GOOGL", "Leader 6", group = gBrd)
 ldr7 = input.symbol("NASDAQ:TSLA",  "Leader 7", group = gBrd)
 breadthMinAlign = input.int(5, "Min leaders aligned", minval = 1, maxval = 7, group = gBrd)
 breadthMinMove  = input.float(0.05, "Min leader move (%)", minval = 0, step = 0.01, group = gBrd)
-breadthOpen     = input.int(93000,  "Leaders open (HHmmss)",  group = gBrd)
-breadthClose    = input.int(160000, "Leaders close (HHmmss)", group = gBrd)
+
+leaderHours = input.string("Regular", "Leader hours", options = ["Regular", "Extended", "Custom"], group = gBrd,
+     tooltip = "Regular is the cash session, 09:30-16:00 ET. Extended adds pre- and post-market, 04:00-20:00 ET, which covers most of the Globex night and is the setting to use with extended trading hours. There is no 24-hour session for these names - nothing trades 20:00-04:00 ET - so the step is still skipped through the small hours. Custom uses the two times below and also requests extended data.")
+breadthOpen     = input.int(93000,  "Leaders open (HHmmss)",  group = gBrd,
+     tooltip = "Custom only. The presets supply their own.")
+breadthClose    = input.int(200000, "Leaders close (HHmmss)", group = gBrd,
+     tooltip = "Custom only.")
 
 showVisuals = input.bool(true, "Show chart visuals", group = gChart)
 showZones   = input.bool(true, "Show setup zones", group = gChart)
@@ -229,7 +234,14 @@ shouldFlatten = flattenAt == sessStart ? false :
      sessStart < flattenAt ? (tod >= flattenAt or tod < sessStart) : (tod >= flattenAt and tod < sessStart)
 
 withinSession = inWindow(tod, sessStart, sessEnd)
-leadersOpen   = inWindow(tod, breadthOpen, breadthClose)
+// The window the leaders are actually tradeable in, which has to match the session the
+// data is requested with. Asking for extended data and then only applying the step
+// 09:30-16:00 would fetch the overnight bars and ignore every one of them.
+ldrExtended = leaderHours != "Regular"
+ldrOpen     = leaderHours == "Regular" ? 93000  : leaderHours == "Extended" ? 40000  : breadthOpen
+ldrClose    = leaderHours == "Regular" ? 160000 : leaderHours == "Extended" ? 200000 : breadthClose
+
+leadersOpen = inWindow(tod, ldrOpen, ldrClose)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Higher timeframe data
@@ -262,20 +274,31 @@ p4c = request.security(syminfo.tickerid, "240", close[1], lookahead = barmerge.l
 vixClose = request.security(vixSymbol, timeframe.period, close, lookahead = barmerge.lookahead_off)
 vixAtr   = request.security(vixSymbol, timeframe.period, ta.atr(atrPeriod), lookahead = barmerge.lookahead_off)
 
-// Each leader as percent change from its own session open - "is this name participating
-// today", the measure the NinjaTrader build uses.
-leaderPct(simple string sym) =>
-    request.security(sym, timeframe.period,
-         (close - ta.valuewhen(session.isfirstbar_regular, open, 0)) / ta.valuewhen(session.isfirstbar_regular, open, 0) * 100.0,
+// Each leader as a percent move - "is this name participating", the measure the
+// NinjaTrader build uses. ticker.modify is what makes the extended session available:
+// the plain symbol returns regular-hours bars only, so pre- and post-market are not
+// missing data, they are data that was never asked for.
+//
+// The reference the move is measured against has to change with the session, because
+// the regular open does not exist yet at 05:00 and is a day stale at 18:00. Regular
+// hours measure from today's open, which is the conventional "up on the day". Extended
+// measures from the last regular close, which is how a pre-market quote is always
+// stated and is defined at every hour the leaders trade.
+leaderPct(simple string sym, simple bool ext) =>
+    request.security(ticker.modify(sym, ext ? session.extended : session.regular),
+         timeframe.period,
+         ext
+             ? (close / ta.valuewhen(session.islastbar_regular, close, 0) - 1.0) * 100.0
+             : (close - ta.valuewhen(session.isfirstbar_regular, open, 0)) / ta.valuewhen(session.isfirstbar_regular, open, 0) * 100.0,
          lookahead = barmerge.lookahead_off)
 
-l1 = leaderPct(ldr1)
-l2 = leaderPct(ldr2)
-l3 = leaderPct(ldr3)
-l4 = leaderPct(ldr4)
-l5 = leaderPct(ldr5)
-l6 = leaderPct(ldr6)
-l7 = leaderPct(ldr7)
+l1 = leaderPct(ldr1, ldrExtended)
+l2 = leaderPct(ldr2, ldrExtended)
+l3 = leaderPct(ldr3, ldrExtended)
+l4 = leaderPct(ldr4, ldrExtended)
+l5 = leaderPct(ldr5, ldrExtended)
+l6 = leaderPct(ldr6, ldrExtended)
+l7 = leaderPct(ldr7, ldrExtended)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Step 1 - context
@@ -716,8 +739,9 @@ alignedN = (leaderAligned(l1, entryLong, breadthMinMove) ? 1 : 0) + (leaderAlign
 availableN = (na(l1) ? 0 : 1) + (na(l2) ? 0 : 1) + (na(l3) ? 0 : 1) + (na(l4) ? 0 : 1) +
      (na(l5) ? 0 : 1) + (na(l6) ? 0 : 1) + (na(l7) ? 0 : 1)
 
-// Outside the leaders' session the step is skipped, not failed. There is no overnight
-// ticker for these names, and a shut equity market is not evidence against a trade.
+// Outside the leaders' session the step is skipped, not failed. A shut equity market is
+// not evidence against a trade. On Extended that window is 04:00-20:00 ET, so only the
+// 20:00-04:00 stretch is skipped rather than the whole Globex night.
 breadthAgrees = breadthMode == "Off" or not leadersOpen ? true :
      availableN == 0 ? false : alignedN >= math.ceil(breadthMinAlign * availableN / 7.0)
 
@@ -996,6 +1020,10 @@ if showVisuals and showFunnel and barstate.islast
 //     NinjaTrader futures feed they are not, which is why both ship Off there. They ship
 //     Off here too, so a first run matches the NinjaTrader baseline before anything else
 //     is switched on.
+//   - Step 6 can run overnight. 'Leader hours' on Extended requests pre- and post-market
+//     data, 04:00-20:00 ET, which covers most of the Globex session. The NinjaTrader
+//     build has no equivalent: there is no overnight ticker for AAPL on that feed, so
+//     the step is simply skipped outside the cash session there.
 //   - Tick size and point value come from the symbol rather than a parameter.
 //
 // Worse here, and worth knowing before comparing results:
