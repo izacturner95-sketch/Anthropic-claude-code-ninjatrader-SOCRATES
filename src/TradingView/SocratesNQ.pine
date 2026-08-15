@@ -217,20 +217,32 @@ withinSession = inWindow(tod, sessStart, sessEnd)
 leadersOpen   = inWindow(tod, breadthOpen, breadthClose)
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Higher timeframe data - lookahead off throughout, so no future leaks in
+// Higher timeframe data
+//
+// lookahead_on with an offset of [1] is the documented non-repainting idiom, and it
+// is not the same as lookahead_off. The offset already restricts the read to a closed
+// higher-timeframe bar, so nothing from the future can leak; what lookahead_on buys is
+// that the value is available from the first chart bar of the new period.
+//
+// With lookahead_off these were a full period stale: during Tuesday, the last closed
+// daily bar is Monday, and high[1] evaluated there is *Friday's* high. Every prior-day
+// level was a day behind, every prior-week level a week behind, and the pivots were
+// computed from the wrong period's high, low and close. The book still had levels in
+// it, which is why this degrades results rather than announcing itself - price sweeps
+// a line that no longer means anything and the sequence goes on to fail downstream.
 // ═══════════════════════════════════════════════════════════════════════════
 
-pdh = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_off)
-pdl = request.security(syminfo.tickerid, "D", low[1],  lookahead = barmerge.lookahead_off)
-pdc = request.security(syminfo.tickerid, "D", close[1], lookahead = barmerge.lookahead_off)
+pdh = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_on)
+pdl = request.security(syminfo.tickerid, "D", low[1],  lookahead = barmerge.lookahead_on)
+pdc = request.security(syminfo.tickerid, "D", close[1], lookahead = barmerge.lookahead_on)
 
-pwh = request.security(syminfo.tickerid, "W", high[1], lookahead = barmerge.lookahead_off)
-pwl = request.security(syminfo.tickerid, "W", low[1],  lookahead = barmerge.lookahead_off)
-pwc = request.security(syminfo.tickerid, "W", close[1], lookahead = barmerge.lookahead_off)
+pwh = request.security(syminfo.tickerid, "W", high[1], lookahead = barmerge.lookahead_on)
+pwl = request.security(syminfo.tickerid, "W", low[1],  lookahead = barmerge.lookahead_on)
+pwc = request.security(syminfo.tickerid, "W", close[1], lookahead = barmerge.lookahead_on)
 
-p4h = request.security(syminfo.tickerid, "240", high[1], lookahead = barmerge.lookahead_off)
-p4l = request.security(syminfo.tickerid, "240", low[1],  lookahead = barmerge.lookahead_off)
-p4c = request.security(syminfo.tickerid, "240", close[1], lookahead = barmerge.lookahead_off)
+p4h = request.security(syminfo.tickerid, "240", high[1], lookahead = barmerge.lookahead_on)
+p4l = request.security(syminfo.tickerid, "240", low[1],  lookahead = barmerge.lookahead_on)
+p4c = request.security(syminfo.tickerid, "240", close[1], lookahead = barmerge.lookahead_on)
 
 vixClose = request.security(vixSymbol, timeframe.period, close, lookahead = barmerge.lookahead_off)
 vixAtr   = request.security(vixSymbol, timeframe.period, ta.atr(atrPeriod), lookahead = barmerge.lookahead_off)
