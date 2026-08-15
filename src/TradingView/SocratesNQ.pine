@@ -15,9 +15,24 @@
 // testable here, which they are not on a futures-only NinjaTrader feed.
 
 //@version=6
+// margin_long/margin_short at 0 is the line that matters here, and it is not a
+// convenience. TradingView's default treats the position as fully cash-funded: one NQ
+// contract is around 23,000 points x $20, so roughly $460,000 of notional, and against
+// any sane initial_capital every order is rejected for insufficient funds. Nothing is
+// printed and no error is raised - entries simply never become trades, while anything
+// the script draws itself still appears. Futures are margined at a few percent of
+// notional, not a hundred, so the cash test is modelling the wrong instrument entirely.
+// Zero removes it; size is fixed at one contract by design, so nothing else was relying
+// on it.
+//
+// slippage is in ticks and matches the NinjaTrader build's 1. Commission is still a
+// Properties-tab setting and still defaults to zero - set it before believing any
+// number this produces.
 strategy("Socrates NQ", "Socrates", overlay = true,
      default_qty_type = strategy.fixed, default_qty_value = 1,
-     initial_capital = 25000, currency = currency.USD,
+     initial_capital = 100000, currency = currency.USD,
+     margin_long = 0, margin_short = 0,
+     slippage = 1,
      process_orders_on_close = true,
      calc_on_every_tick = false,
      max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500)
@@ -721,12 +736,23 @@ if newSession
     haltedToday := false
     dayStartProfit := strategy.netprofit
 
-// Closed-trade bookkeeping, which is also where the consecutive-loss halt arms.
+// Closed-trade bookkeeping, which is also where the consecutive-loss halt arms and
+// where the realised result gets its label on the chart.
 if strategy.closedtrades > nz(strategy.closedtrades[1])
     p = strategy.closedtrades.profit(strategy.closedtrades - 1)
     consecLosses := p < 0 ? consecLosses + 1 : p > 0 ? 0 : consecLosses
     if maxConsecLoss > 0 and consecLosses >= maxConsecLoss
         haltedToday := true
+
+    // Realised dollars where the trade ended, so the chart carries the outcome and not
+    // only the intent. R would be the better unit if risk were constant, but with a
+    // structural stop it varies many-fold between trades and dollars are the honest one.
+    if showVisuals
+        label.new(bar_index, p >= 0 ? high + atr * 0.6 : low - atr * 0.6,
+             (p >= 0 ? "+" : "") + str.tostring(p, "#") ,
+             style = p >= 0 ? label.style_label_down : label.style_label_up,
+             color = color.new(p >= 0 ? color.green : color.red, 25),
+             textcolor = color.white, size = size.small)
 
 dayPnl = strategy.netprofit - dayStartProfit
 if maxDailyLoss > 0 and dayPnl <= -maxDailyLoss
@@ -770,6 +796,11 @@ var float liveStop = na
 var float liveTarget = na
 var bool  liveCont = false
 
+// Planned reward-to-risk, averaged over every entry. It is what the geometry offered,
+// which is a different question from what the trades realised, and worth both.
+var float rrSum = 0.0
+var int   rrCount = 0
+
 qty = math.min(fixedContracts, maxContracts)
 
 if canEnter
@@ -791,6 +822,19 @@ if canEnter
     liveTarget := entryTarget
     liveCont := entryCont
 
+    plannedRr = math.abs(entryTarget - close) / math.abs(close - entryStop)
+    rrSum += plannedRr
+    rrCount += 1
+
+    // The planned ratio and the risk in dollars, at the bar the trade was taken. Both
+    // are decided here and neither is visible from the candles afterwards.
+    if showVisuals
+        label.new(bar_index, entryLong ? low - atr * 0.6 : high + atr * 0.6,
+             (entryCont ? "cont " : "sweep ") + str.tostring(plannedRr, "#.#") + "R\nrisk " + str.tostring(riskDollars, "#"),
+             style = entryLong ? label.style_label_up : label.style_label_down,
+             color = color.new(entryLong ? color.blue : color.orange, 25),
+             textcolor = color.white, size = size.small)
+
 // End-of-day flatten outranks everything.
 if shouldFlatten and strategy.position_size != 0
     strategy.close_all("flatten")
@@ -808,11 +852,11 @@ if strategy.position_size == 0
 
 inPosition = strategy.position_size != 0
 
-plot(showVisuals and inPosition ? liveStop : na, "Stop", color.new(color.red, 0), 2, plot.style_linebr)
-plot(showVisuals and inPosition ? liveTarget : na, "Target", color.new(color.green, 0), 2, plot.style_linebr)
+plot(showVisuals and inPosition ? liveStop : na, "Stop", color.new(color.red, 0), 3, plot.style_linebr)
+plot(showVisuals and inPosition ? liveTarget : na, "Target", color.new(color.green, 0), 3, plot.style_linebr)
 
-plotshape(showVisuals and canEnter and entryLong, "Long entry", shape.triangleup, location.belowbar, color.new(color.blue, 0), size = size.tiny)
-plotshape(showVisuals and canEnter and not entryLong, "Short entry", shape.triangledown, location.abovebar, color.new(color.orange, 0), size = size.tiny)
+plotshape(showVisuals and canEnter and entryLong, "Long entry", shape.triangleup, location.belowbar, color.new(color.blue, 0), size = size.small)
+plotshape(showVisuals and canEnter and not entryLong, "Short entry", shape.triangledown, location.abovebar, color.new(color.orange, 0), size = size.small)
 
 // The zone shows what the strategy is watching, not only what it eventually did.
 var box zoneBox = na
@@ -839,31 +883,36 @@ if showVisuals and showLevels and barstate.islast and array.size(levels) > 0
 
 // Profit factor and per-trade dollars sit above R deliberately: with a structural stop
 // the risk varies many-fold between trades, so R is not comparable across them.
-var table panel = table.new(position.top_right, 2, 9, bgcolor = color.new(color.black, 20), border_width = 1)
+var table panel = table.new(position.top_right, 2, 11, bgcolor = color.new(color.black, 15), border_width = 1)
+
+// Global scope only, as with the funnel.
+panelRow(int row, string label, string value, color valueColor) =>
+    table.cell(panel, 0, row, label, text_color = color.gray, text_size = size.normal,
+         text_halign = text.align_left)
+    table.cell(panel, 1, row, value, text_color = valueColor, text_size = size.normal,
+         text_halign = text.align_right)
 
 if showVisuals and showPanel and barstate.islast
     total = strategy.closedtrades
     pf = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : na
     stateTxt = stState == 0 ? "Idle" : stState == 1 ? "AwaitingShift" : "AwaitingRetest"
+    openPl = strategy.openprofit
 
-    table.cell(panel, 0, 0, "SOCRATES", text_color = color.silver, text_size = size.small)
-    table.cell(panel, 1, 0, stateTxt + (stCont and stState == 2 ? " (cont)" : ""), text_color = color.white, text_size = size.small)
-    table.cell(panel, 0, 1, "trades", text_color = color.gray, text_size = size.small)
-    table.cell(panel, 1, 1, str.tostring(total), text_color = color.white, text_size = size.small)
-    table.cell(panel, 0, 2, "won / lost", text_color = color.gray, text_size = size.small)
-    table.cell(panel, 1, 2, str.tostring(strategy.wintrades) + " / " + str.tostring(strategy.losstrades), text_color = color.white, text_size = size.small)
-    table.cell(panel, 0, 3, "win rate", text_color = color.gray, text_size = size.small)
-    table.cell(panel, 1, 3, total > 0 ? str.tostring(strategy.wintrades * 100.0 / total, "#.#") + "%" : "-", text_color = color.white, text_size = size.small)
-    table.cell(panel, 0, 4, "net", text_color = color.gray, text_size = size.small)
-    table.cell(panel, 1, 4, str.tostring(strategy.netprofit, "#"), text_color = strategy.netprofit >= 0 ? color.lime : color.red, text_size = size.small)
-    table.cell(panel, 0, 5, "factor", text_color = color.gray, text_size = size.small)
-    table.cell(panel, 1, 5, na(pf) ? "-" : str.tostring(pf, "#.##"), text_color = color.white, text_size = size.small)
-    table.cell(panel, 0, 6, "per trade", text_color = color.gray, text_size = size.small)
-    table.cell(panel, 1, 6, total > 0 ? str.tostring(strategy.netprofit / total, "#") : "-", text_color = color.white, text_size = size.small)
-    table.cell(panel, 0, 7, "today", text_color = color.gray, text_size = size.small)
-    table.cell(panel, 1, 7, str.tostring(tradesToday) + " trades", text_color = color.white, text_size = size.small)
-    table.cell(panel, 0, 8, "halted", text_color = color.gray, text_size = size.small)
-    table.cell(panel, 1, 8, haltedToday ? "yes" : "no", text_color = haltedToday ? color.orange : color.gray, text_size = size.small)
+    panelRow(0, "SOCRATES", stateTxt + (stCont and stState == 2 ? " (cont)" : ""), color.silver)
+    panelRow(1, "trades", str.tostring(total), color.white)
+    panelRow(2, "won / lost", str.tostring(strategy.wintrades) + " / " + str.tostring(strategy.losstrades), color.white)
+    panelRow(3, "win rate", total > 0 ? str.tostring(strategy.wintrades * 100.0 / total, "#.#") + "%" : "-", color.white)
+    panelRow(4, "net profit", str.tostring(strategy.netprofit, "#"), strategy.netprofit >= 0 ? color.lime : color.red)
+    panelRow(5, "open P/L", inPosition ? str.tostring(openPl, "#") : "-", inPosition ? (openPl >= 0 ? color.lime : color.red) : color.gray)
+    panelRow(6, "profit factor", na(pf) ? "-" : str.tostring(pf, "#.##"), color.white)
+    panelRow(7, "per trade", total > 0 ? str.tostring(strategy.netprofit / total, "#") : "-", color.white)
+
+    // Planned, not realised: what the stop and target offered at entry. The realised
+    // ratio is whatever the exits actually paid, and profit factor above is the honest
+    // version of that.
+    panelRow(8, "planned R:R", rrCount > 0 ? "1 : " + str.tostring(rrSum / rrCount, "#.##") : "-", color.aqua)
+    panelRow(9, "today", str.tostring(tradesToday) + " trades", color.white)
+    panelRow(10, "halted", haltedToday ? "yes" : "no", haltedToday ? color.orange : color.gray)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // The funnel
@@ -878,9 +927,9 @@ var table funnel = table.new(position.bottom_right, 2, 17, bgcolor = color.new(c
 
 // Global scope only, so it cannot be folded into the block below.
 funnelRow(int row, string label, string value, color valueColor) =>
-    table.cell(funnel, 0, row, label, text_color = color.gray, text_size = size.tiny,
+    table.cell(funnel, 0, row, label, text_color = color.gray, text_size = size.small,
          text_halign = text.align_left)
-    table.cell(funnel, 1, row, value, text_color = valueColor, text_size = size.tiny,
+    table.cell(funnel, 1, row, value, text_color = valueColor, text_size = size.small,
          text_halign = text.align_right)
 
 if showVisuals and showFunnel and barstate.islast
@@ -926,12 +975,12 @@ if showVisuals and showFunnel and barstate.islast
          ? "stop ticks over " + str.tostring(stopSamples) + " setups:  min " + str.tostring(stopMin, "#") +
            "   mean " + str.tostring(stopSum / stopSamples, "#") + "   max " + str.tostring(stopMax, "#")
          : "no setup has reached the stop calculation yet",
-         text_color = color.silver, text_size = size.tiny, text_halign = text.align_left)
+         text_color = color.silver, text_size = size.small, text_halign = text.align_left)
 
     table.cell(stops, 0, 1, "band admits " + str.tostring(minStopTicks) + "-" + str.tostring(maxStopTicks) +
          (stopSamples == 0 ? "" : inBand ? "  (overlaps)" : "  <-- NO OVERLAP, every setup is refused here"),
          text_color = stopSamples > 0 and not inBand ? color.red : color.gray,
-         text_size = size.tiny, text_halign = text.align_left)
+         text_size = size.small, text_halign = text.align_left)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Differences from the NinjaTrader build
@@ -953,7 +1002,8 @@ if showVisuals and showFunnel and barstate.islast
 //   - No 1-minute fill resolution. TradingView fills against the chart's own bars, so a
 //     bar touching both stop and target resolves by its own assumption. Measured on the
 //     NinjaTrader build that was worth about 0.6% of net - small, not nothing.
-//   - Commission and slippage are set in the strategy Properties tab, not here. Set them.
+//   - Slippage is set here at 1 tick, matching the NinjaTrader build. Commission is not,
+//     and defaults to zero - set it in Properties before believing any number produced.
 //   - Strict mode is dropped from both confirmations. It needed the VIX to be reacting
 //     from its own swing levels, which meant running a second level book on a second
 //     instrument; Directional is what the NinjaTrader runs actually used.
