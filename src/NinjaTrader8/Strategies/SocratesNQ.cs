@@ -395,7 +395,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// it. And they are thinner than the shares, so a leader can be genuinely flat
 				// while the underlying is moving.
 				BreadthMode = ConfirmationMode.Off;
-				BreadthSymbols = "SAAPL,SMSFT,SNVDA,SAMZN,SMETA,SGOOGL,STSLA";
+				// SGOOG, not SGOOGL - the futures root drops the share class the cash ticker
+				// carries. Confirmed against a run that resolved all seven to 09-26 contracts.
+				BreadthSymbols = "SAAPL,SMSFT,SNVDA,SAMZN,SMETA,SGOOG,STSLA";
 				BreadthBarMinutes = 5;
 				BreadthMinAligned = 5;
 				BreadthMinMovePercent = 0.05;
@@ -1799,6 +1801,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Daily loss cap  : {0}", DescribeDailyCap()));
 			Print(string.Format("  Confirmations   : VIX {0}, leaders {1}", VixMode, BreadthMode));
 
+			// Repeated here rather than left in the startup banner. By the time this prints,
+			// the banner has scrolled past several thousand lines of replay output, and this
+			// is the last moment before real orders that anyone is going to read.
+			if (MaxDailyLossDollars <= 0)
+			{
+				Print("  WARNING: no daily loss cap. Nothing refuses a trade for risking more than the");
+				Print("           day can afford, because there is no figure for what the day can afford.");
+				Print(string.Format("           A full-width stop is {0:C} on this configuration.",
+					MaxStopTicks * TickValueDollars * Math.Max(1, MaxContracts)));
+			}
+
 			// Everything below came out of the replay, not out of the market.
 			Print(string.Format("  Simulated first : {0} bar(s) replayed, {1} trade(s) filled against history.",
 				barsProcessed, processedTradeCount));
@@ -1859,9 +1872,31 @@ namespace NinjaTrader.NinjaScript.Strategies
 				Print(string.Format("  Worst trade     : {0} ticks x {1:C} x {2} contract(s) = {3:C}. No daily loss cap set.",
 					worstStopTicks, TickValueDollars, contracts, worstTrade));
 
-				Print(MaxConsecutiveLosses > 0
-					? string.Format("                    {0} consecutive losses halt the day; nothing else limits it.", MaxConsecutiveLosses)
-					: "                    Nothing halts the day. Every setup that passes is taken.");
+				// The number a funded or evaluation account is actually judged against. Two
+				// halts bound the day - consecutive losses and the trade cap - and the smaller
+				// of them decides how many full-width losses can land before trading stops.
+				// Neither is a dollar limit, so without a cap this is the real exposure and
+				// nothing in the strategy is comparing it to anything.
+				int lossesBeforeHalt = int.MaxValue;
+
+				if (MaxConsecutiveLosses > 0)
+					lossesBeforeHalt = MaxConsecutiveLosses;
+
+				if (MaxTradesPerDay > 0 && MaxTradesPerDay < lossesBeforeHalt)
+					lossesBeforeHalt = MaxTradesPerDay;
+
+				if (lossesBeforeHalt == int.MaxValue)
+				{
+					Print("                    Nothing halts the day. Every setup that passes is taken, and");
+					Print("                    the day's loss is unbounded. Do not run this on a funded account.");
+					return;
+				}
+
+				Print(string.Format("  Worst day       : {0} full-width losses before trading halts = {1:C}.",
+					lossesBeforeHalt, worstTrade * lossesBeforeHalt));
+				Print("                    Compare that to your account's daily loss limit and trailing");
+				Print("                    drawdown before running this unattended. If it is larger than");
+				Print("                    either, set 'Max daily loss ($)' or lower 'Max stop (ticks)'.");
 
 				return;
 			}
