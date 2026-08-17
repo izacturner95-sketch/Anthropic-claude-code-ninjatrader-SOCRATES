@@ -233,7 +233,48 @@ MSFT, NVDA, AMZN, META, GOOGL, TSLA` and set **Leaders open / close** to `093000
 `160000` — imported share data is cash-session only, and leaving the window at `0`/`0`
 would have the step reaching for overnight bars that are not in the file.
 
-## 9. Disabling and re-enabling on a live chart
+## 9. Steps 5 and 6 cannot be backtested, and what to do about it
+
+Both read contract-based instruments — `VX` for the VIX, `SAAPL` and the rest for the
+leaders — and NinjaTrader does not carry their history across a contract roll. A backtest
+of either step therefore reaches back only as far as the current contract was listed,
+which is weeks, against the months the rest of the strategy has. The longer run has no
+step 5 or step 6 data at all, and never will.
+
+Two things help.
+
+**Set a merge policy.** In **Tools → Instruments**, find the instrument, and set *Merge
+Policy* to `Merge Non Back Adjusted`. NinjaTrader then stitches expired contracts together
+when you request the root symbol without a month, so `VX` returns continuous history
+rather than one contract's worth. Back-adjusting is the wrong choice here — it shifts
+historical prices to remove roll gaps, and step 5 reads levels as well as direction.
+Expect a discontinuity at each roll either way; a six-bar change measured across one is
+not meaningful, which is a small and bounded cost.
+
+**Or measure them forward, with Shadow confirmations.** Turn it on and both steps evaluate
+every setup and record their verdict, but refuse nothing — every trade is taken. The run
+summary then reports what the trades they *would* have refused actually did:
+
+```
+--- shadow confirmations: what steps 5 and 6 would have done ---
+Neither step objected : 24 trades, 15 won, $8,200.00, $341.67 each
+Step 5 would refuse   : 17 trades, 6 won, -$1,430.00, -$84.12 each
+VERDICT: the refused trades lost $1,430.00 between them. Running the steps live would
+         have avoided that. On this sample the filters are earning their place.
+```
+
+That is the question a filter actually has to answer. Counting how many setups it refused
+says nothing — a filter that refuses everything scores best on that. What matters is
+whether the refused trades were worse than the ones let through, and finding out means
+taking them.
+
+**Shadow mode removes protection while it is on.** It is a measuring instrument, not a
+setting to leave running on a funded account. Ship it off, turn it on when you want a
+reading, turn it off again.
+
+---
+
+## 10. Disabling and re-enabling on a live chart
 
 Turning the strategy off and on again paints trades on bars that have already printed.
 Those are not orders that were sent, and nothing went wrong. Enabling a strategy makes
@@ -266,7 +307,7 @@ not "an order existed here".
 
 ---
 
-## 10. Before going live
+## 11. Before going live
 
 In order, no skipping:
 

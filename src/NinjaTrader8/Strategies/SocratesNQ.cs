@@ -167,6 +167,31 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// any good", and with both exits read off structure the R multiple actually realised
 		// is the number that says whether the geometry works.
 		private readonly List<double> pendingRiskDollars = new List<double>();
+
+		// Shadow mode. Steps 5 and 6 read contract-based data that NinjaTrader does not carry
+		// across a roll, so neither can ever be backtested over more than the current
+		// contract's life - a fortnight, against the months the rest of the strategy has. A
+		// filter that cannot be measured is a filter taken on faith.
+		//
+		// With shadow on, both steps evaluate and record their verdict but refuse nothing.
+		// Every trade is taken, and each one carries a note of which step would have vetoed
+		// it. The run summary then reports what the vetoed trades actually did, which is the
+		// only honest way to price a filter on data this short: forwards, on trades that
+		// really closed, accumulating a sample instead of waiting for one.
+		private readonly List<bool> pendingVixVeto = new List<bool>();
+		private readonly List<bool> pendingBreadthVeto = new List<bool>();
+		private bool shadowVixVetoed;
+		private bool shadowBreadthVetoed;
+
+		private int shadowVixVetoTrades;
+		private int shadowVixVetoWon;
+		private double shadowVixVetoPnL;
+		private int shadowBreadthVetoTrades;
+		private int shadowBreadthVetoWon;
+		private double shadowBreadthVetoPnL;
+		private int shadowCleanTrades;
+		private int shadowCleanWon;
+		private double shadowCleanPnL;
 		private int tradesWon;
 		private int tradesLost;
 		private int tradesScratch;
@@ -415,6 +440,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				ShowChartVisuals = true;
 				ShowSetupZones = true;
 				ShowStatsPanel = true;
+
+				// Off. Turning it on stops steps 5 and 6 refusing anything, which is a
+				// deliberate loss of protection - it is a measuring instrument, not a setting
+				// to leave on a funded account.
+				ShadowConfirmations = false;
 
 				EnableLogging = true;
 				VerboseLogging = false;
@@ -858,6 +888,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			double strength = 1.0;
 
+			shadowVixVetoed = false;
+			shadowBreadthVetoed = false;
+
 			// Step 5.
 			if (vix != null)
 			{
@@ -867,13 +900,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 				{
 					dayRejectedVix++;
 					totalRejectedVix++;
-					Log(string.Format("Setup rejected at step 5. {0} | {1}", vixResult.Detail, result.Detail));
-					return;
+
+					if (!ShadowConfirmations)
+					{
+						Log(string.Format("Setup rejected at step 5. {0} | {1}", vixResult.Detail, result.Detail));
+						return;
+					}
+
+					shadowVixVetoed = true;
+					Log(string.Format("Step 5 disagreed but shadow mode is on - taking the trade anyway. {0}", vixResult.Detail));
 				}
 
 				strength = Math.Min(strength, vixResult.Strength);
 
-				if (VerboseLogging)
+				if (VerboseLogging && !shadowVixVetoed)
 					Log("Step 5 passed: " + vixResult.Detail);
 			}
 
@@ -895,13 +935,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 				{
 					dayRejectedBreadth++;
 					totalRejectedBreadth++;
-					Log(string.Format("Setup rejected at step 6. {0} | {1}", breadthResult.Detail, result.Detail));
-					return;
+
+					if (!ShadowConfirmations)
+					{
+						Log(string.Format("Setup rejected at step 6. {0} | {1}", breadthResult.Detail, result.Detail));
+						return;
+					}
+
+					shadowBreadthVetoed = true;
+					Log(string.Format("Step 6 disagreed but shadow mode is on - taking the trade anyway. {0}", breadthResult.Detail));
 				}
 
 				strength = Math.Min(strength, breadthResult.Strength);
 
-				if (VerboseLogging)
+				if (VerboseLogging && !shadowBreadthVetoed)
 					Log("Step 6 passed: " + breadthResult.Detail);
 			}
 
@@ -1270,6 +1317,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// taken. One position at a time and one entry per direction, so pairing the
 			// oldest unmatched entry with the next closed trade holds.
 			pendingRiskDollars.Add(stopDistanceTicks * TickValueDollars * contracts);
+			pendingVixVeto.Add(shadowVixVetoed);
+			pendingBreadthVeto.Add(shadowBreadthVetoed);
 
 			double plannedReward = targetPrice > 0 ? Math.Abs(targetPrice - entryPrice) : 0;
 			double plannedRisk = Math.Abs(entryPrice - stopPrice);
@@ -1630,6 +1679,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 			vixUpdatesApplied = 0;
 
 			pendingRiskDollars.Clear();
+			pendingVixVeto.Clear();
+			pendingBreadthVeto.Clear();
+			shadowVixVetoed = shadowBreadthVetoed = false;
+			shadowVixVetoTrades = shadowVixVetoWon = 0;
+			shadowBreadthVetoTrades = shadowBreadthVetoWon = 0;
+			shadowCleanTrades = shadowCleanWon = 0;
+			shadowVixVetoPnL = shadowBreadthVetoPnL = shadowCleanPnL = 0;
 			tradesWon = tradesLost = tradesScratch = 0;
 			grossProfit = grossLoss = largestLoss = 0;
 			runningEquity = equityPeak = maxDrawdown = 0;
@@ -2047,6 +2103,51 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double riskDollars = pendingRiskDollars[0];
 			pendingRiskDollars.RemoveAt(0);
 
+			// Popped in step with the risk, so the three lists cannot drift apart.
+			bool vixVetoed = false;
+			bool breadthVetoed = false;
+
+			if (pendingVixVeto.Count > 0)
+			{
+				vixVetoed = pendingVixVeto[0];
+				pendingVixVeto.RemoveAt(0);
+			}
+
+			if (pendingBreadthVeto.Count > 0)
+			{
+				breadthVetoed = pendingBreadthVeto[0];
+				pendingBreadthVeto.RemoveAt(0);
+			}
+
+			// A trade can be vetoed by both steps, so it lands in both buckets. The clean
+			// bucket is the counterfactual: what the run would have been with the filters on.
+			if (vixVetoed)
+			{
+				shadowVixVetoTrades++;
+				shadowVixVetoPnL += profitDollars;
+
+				if (profitDollars > 0)
+					shadowVixVetoWon++;
+			}
+
+			if (breadthVetoed)
+			{
+				shadowBreadthVetoTrades++;
+				shadowBreadthVetoPnL += profitDollars;
+
+				if (profitDollars > 0)
+					shadowBreadthVetoWon++;
+			}
+
+			if (!vixVetoed && !breadthVetoed)
+			{
+				shadowCleanTrades++;
+				shadowCleanPnL += profitDollars;
+
+				if (profitDollars > 0)
+					shadowCleanWon++;
+			}
+
 			if (riskDollars <= 0)
 				return;
 
@@ -2180,7 +2281,76 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 			}
 
+			LogShadowVerdict();
+
 			Print("  These are backtest fills. Model commission and slippage before believing any of it.");
+		}
+
+		/// <summary>
+		/// What steps 5 and 6 would have cost or saved, measured on trades that actually
+		/// closed rather than on a backtest that cannot reach far enough back to hold one.
+		///
+		/// The question a filter has to answer is not "how many trades did it refuse" - that
+		/// is just a count, and a filter that refuses everything scores best on it. It is
+		/// whether the refused trades were worse than the ones let through. That needs their
+		/// results, which means taking them, which is what shadow mode is for.
+		/// </summary>
+		private void LogShadowVerdict()
+		{
+			if (!ShadowConfirmations)
+				return;
+
+			int total = shadowCleanTrades + shadowVixVetoTrades + shadowBreadthVetoTrades;
+
+			if (total == 0)
+			{
+				Print("  --- shadow confirmations ---");
+				Print("  On, but no trade closed with a verdict recorded. Both steps are Off, or nothing traded.");
+				return;
+			}
+
+			Print("  --- shadow confirmations: what steps 5 and 6 would have done ---");
+			Print("  Every trade below was taken. The steps recorded a verdict and blocked nothing.");
+
+			Print(string.Format("  Neither step objected : {0} trades, {1} won, {2:C}{3}",
+				shadowCleanTrades, shadowCleanWon, shadowCleanPnL,
+				shadowCleanTrades > 0 ? string.Format(", {0:C} each", shadowCleanPnL / shadowCleanTrades) : string.Empty));
+
+			if (vix != null)
+			{
+				Print(string.Format("  Step 5 would refuse   : {0} trades, {1} won, {2:C}{3}",
+					shadowVixVetoTrades, shadowVixVetoWon, shadowVixVetoPnL,
+					shadowVixVetoTrades > 0 ? string.Format(", {0:C} each", shadowVixVetoPnL / shadowVixVetoTrades) : string.Empty));
+			}
+
+			if (breadth != null)
+			{
+				Print(string.Format("  Step 6 would refuse   : {0} trades, {1} won, {2:C}{3}",
+					shadowBreadthVetoTrades, shadowBreadthVetoWon, shadowBreadthVetoPnL,
+					shadowBreadthVetoTrades > 0 ? string.Format(", {0:C} each", shadowBreadthVetoPnL / shadowBreadthVetoTrades) : string.Empty));
+			}
+
+			// The verdict, stated so it cannot be read the flattering way by accident. A
+			// filter earns its place by refusing trades that lost money; refusing trades that
+			// made money is a cost, however sound the reasoning behind it sounds.
+			double refusedPnL = shadowVixVetoPnL + shadowBreadthVetoPnL;
+			int refusedTrades = shadowVixVetoTrades + shadowBreadthVetoTrades;
+
+			if (refusedTrades == 0)
+			{
+				Print("  Neither step objected to anything that traded. No evidence either way yet.");
+				return;
+			}
+
+			Print(refusedPnL < 0
+				? string.Format("  VERDICT: the refused trades lost {0:C} between them. Running the steps live would", -refusedPnL)
+				: string.Format("  VERDICT: the refused trades made {0:C} between them. Running the steps live would", refusedPnL));
+
+			Print(refusedPnL < 0
+				? "           have avoided that. On this sample the filters are earning their place."
+				: "           have given that up. On this sample the filters are costing money.");
+
+			Print(string.Format("           {0} trades of evidence. Keep accumulating before acting on it.", refusedTrades));
 		}
 
 		private void RecordStopDistance(double stopTicks)
@@ -2765,6 +2935,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[NinjaScriptProperty]
 		[Display(Name = "Show stats panel", Description = "Running totals in the top-right corner.", GroupName = "10. Chart", Order = 2)]
 		public bool ShowStatsPanel { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Shadow confirmations", Description = "Steps 5 and 6 evaluate and record their verdict but refuse nothing - every trade is taken. The run summary then reports what the trades they would have refused actually did. This exists because both steps read contract-based data NinjaTrader does not keep across a roll, so neither can be backtested over more than the current contract's life; shadow mode measures them forward instead. It removes protection while on. Do not leave it on for a funded account.", GroupName = "9. Diagnostics", Order = 4)]
+		public bool ShadowConfirmations { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Enable logging", GroupName = "9. Diagnostics", Order = 0)]
