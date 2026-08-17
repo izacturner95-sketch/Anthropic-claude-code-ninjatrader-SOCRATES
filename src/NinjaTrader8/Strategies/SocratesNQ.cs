@@ -413,6 +413,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				VixMinDirectionalMoveAtr = 0.5;
 				VixKeyLevelTolerance = 0.35;
 
+				// 0 derives the limit from the bar period, which is right for the index and
+				// far too tight for VX. 90 minutes suits the futures overnight.
+				VixMaxDataAgeMinutes = 90;
+				VixSkipWhenQuiet = true;
+
 				// --- Step 6: breadth ---
 				//
 				// CME single stock futures, not the cash shares. NinjaTrader's feed carries no
@@ -587,7 +592,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 						MinDirectionalMove = VixMinDirectionalMove,
 						MinDirectionalMoveAtr = VixMinDirectionalMoveAtr,
 						KeyLevelTolerance = VixKeyLevelTolerance,
-						MaxDataAgeMinutes = VixBarMinutes * 3
+						// 0 derives it from the bar period, which suits the index. VX needs a
+						// number of its own - see the parameter's description.
+						MaxDataAgeMinutes = VixMaxDataAgeMinutes > 0 ? VixMaxDataAgeMinutes : VixBarMinutes * 3,
+						SkipWhenQuiet = VixSkipWhenQuiet
 					}, new MarketAnalyzer(vixSettings));
 				}
 
@@ -2553,12 +2561,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 					Print(string.Format("      {0,-18} {1}", (EntryBlockReason)i, blockReasonCounts[i]));
 			}
 
-			Print(string.Format("  Step 5 (VIX)         : {0}", totalRejectedVix));
+			Print(string.Format("  Step 5 (VIX)         : {0}{1}", totalRejectedVix,
+				vix != null && vix.SkippedQuiet > 0
+					? string.Format("   ({0} skipped, source quiet)", vix.SkippedQuiet)
+					: string.Empty));
 
 			if (vix != null && totalRejectedVix + vix.Confirmed > 0)
 			{
-				Print(string.Format("      no data {0}, source closed {1}, direction {2}, not at a level {3}, confirmed {4}",
-					vix.RejectedNoData, vix.RejectedStale, vix.RejectedDirection, vix.RejectedNotAtLevel, vix.Confirmed));
+				Print(string.Format("      no data {0}, stale {1}, quiet-skipped {2}, direction {3}, not at a level {4}, confirmed {5}",
+					vix.RejectedNoData, vix.RejectedStale, vix.SkippedQuiet, vix.RejectedDirection, vix.RejectedNotAtLevel, vix.Confirmed));
 
 				if (vix.MoveSamples > 0)
 				{
@@ -2601,7 +2612,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 				else if (vix.RejectedStale > 0)
 				{
-					Print("      NOTE: the VIX series was always stale. Its session does not overlap the chart's.");
+					Print("      NOTE: the VIX series was always stale and skipping is off, so step 5 refused");
+					Print("            everything. Turn on 'VIX skip when quiet', or raise 'VIX max data age'.");
+				}
+
+				// The step standing aside more often than it speaks is worth saying out loud.
+				// It is still doing its job on the bars it can reach, but it is not the filter
+				// the parameter panel implies it is.
+				if (vix.SkippedQuiet > totalRejectedVix + vix.Confirmed)
+				{
+					Print(string.Format("      NOTE: step 5 stood aside on {0} setups and judged {1}. VX prints rarely",
+						vix.SkippedQuiet, totalRejectedVix + vix.Confirmed));
+					Print("            outside the cash session, so overnight it mostly has nothing to say.");
 				}
 			}
 			Print(string.Format("  Step 6 (leaders)     : {0}{1}", totalRejectedBreadth,
@@ -2986,6 +3008,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0.01, 10)]
 		[Display(Name = "VIX key level tolerance", Description = "How close the VIX must be to one of its levels to count as reacting from it. Only used in Strict mode.", GroupName = "7. Step 5 - VIX", Order = 6)]
 		public double VixKeyLevelTolerance { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 1440)]
+		[Display(Name = "VIX max data age (minutes)", Description = "How old the last VIX bar may be and still confirm. 0 derives it from the bar period, which suits the ^VIX index - it either publishes or is shut. VX futures are different: the contract is open nearly 23 hours but a bar only forms when someone trades, and overnight VX can go well over an hour without a print. 90 is sized for that.", GroupName = "7. Step 5 - VIX", Order = 7)]
+		public int VixMaxDataAgeMinutes { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "VIX skip when quiet", Description = "When the VIX has traded and then gone quiet past the age limit, skip step 5 rather than refuse the setup - the same judgement step 6 makes about a shut equity market. A source with nothing to say is not evidence against a trade, and refusing on staleness turns every thin overnight hour into a blanket ban. A symbol that has never produced a bar still fails loudly: that is a feed problem, not a quiet one.", GroupName = "7. Step 5 - VIX", Order = 8)]
+		public bool VixSkipWhenQuiet { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Breadth mode", GroupName = "8. Step 6 - Leaders", Order = 0)]

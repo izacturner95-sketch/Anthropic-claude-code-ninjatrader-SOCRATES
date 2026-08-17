@@ -109,6 +109,20 @@ rather than tracking spot exactly, which does not matter here — the step reads
 and levels, not the absolute number. Point **VIX symbol** back at `^VIX` if you want the
 index, and the banner will warn you when that is combined with extended hours.
 
+**Open is not the same as trading.** VX is listed nearly 23 hours but a bar only forms
+when somebody trades, and overnight it can go well over an hour without a print. So the
+staleness limit is a parameter of its own — **VIX max data age (minutes)**, 90 by
+default — rather than being derived from the bar period, which is right for an index that
+either publishes or is shut and much too tight for a thin futures tape.
+
+When the source has gone quiet past that limit, **VIX skip when quiet** makes step 5 stand
+aside instead of refusing the setup. It is the same judgement step 6 makes about a closed
+equity market: a source with nothing to say is not evidence against a trade, and refusing
+on staleness is not a filter, it is the step deciding the strategy may not trade at night.
+A symbol that has *never* produced a bar still fails loudly — that is a feed problem, not
+a quiet one. The run summary counts the skips, and says so when the step is standing aside
+more often than it speaks.
+
 **Step 6 uses CME single stock futures**, `SAAPL` and the rest — not the cash shares.
 NinjaTrader's feed carries no US equities at all, so `AAPL` was never going to supply
 this step here. The futures suit it better anyway: they run Globex hours, so breadth can

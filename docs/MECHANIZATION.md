@@ -289,10 +289,29 @@ all overnight, so a threshold that is reasonable during the cash session silentl
 becomes an impossible one at 3am. Scaling to the source's own volatility asks the same
 question at any hour.
 
-The run summary breaks the step's refusals into no data, source closed, direction, and
-not-at-a-level, and prints the distribution of moves actually measured against the
+The run summary breaks the step's refusals into no data, stale, quiet-skipped, direction,
+and not-at-a-level, and prints the distribution of moves actually measured against the
 threshold in force — because "step 5 rejected everything" has at least four causes and
 they need different fixes.
+
+**A quiet source is not a disagreeing one.** VX is listed nearly 23 hours, but a bar only
+forms when somebody trades, and overnight it can go well past an hour without a print.
+The staleness limit was derived from the bar period — three times five minutes — which is
+the right shape for an index that either publishes or is shut, and hopeless for a thin
+futures tape. Every overnight setup arrived at a step holding a reading it considered
+expired, and was refused. Since the strategy defaults to extended hours, that is most of
+the setups there are.
+
+Two changes. The limit is now its own parameter, `VIX max data age (minutes)`, at 90. And
+past it the step **stands aside rather than refusing**, which is the judgement step 6
+already makes about a shut equity market and belongs here for the same reason: a source
+with nothing to say is not evidence against a trade. Refusing on staleness is not a
+filter — it is the step deciding the strategy may not trade at night, which is not what
+anyone configured.
+
+The skip stays narrow in the same way step 6's does. It applies once the source has
+produced a bar and then gone quiet. A symbol that never produced one is a feed or symbol
+problem and still fails loudly.
 
 With `Scale size by confirmation strength` enabled, a weak confirmation reduces
 position size instead of blocking the trade.

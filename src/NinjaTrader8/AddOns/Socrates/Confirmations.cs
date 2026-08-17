@@ -85,11 +85,31 @@ namespace Socrates.Market
 		/// <summary>
 		/// How old the last VIX bar may be and still be treated as a live reading.
 		///
-		/// The VIX trades regular hours only. Without this, its last cash-session close stays
-		/// in memory all night and confirms overnight trades against a price from hours ago -
-		/// which does not fail, it silently agrees, and that is worse.
+		/// Without this, the last close stays in memory and confirms trades against a price
+		/// from hours ago - which does not fail, it silently agrees, and that is worse.
+		///
+		/// Sized for the source. Three bar periods is right for the ^VIX index, which either
+		/// publishes continuously or is shut. It is far too tight for VX futures overnight:
+		/// the contract is open from 17:00 to 16:00 CT but a bar only forms when someone
+		/// trades, and at 1am VX can go well over an hour without a print. Open and quiet is
+		/// not the same as closed, and this number cannot tell them apart.
 		/// </summary>
 		public double MaxDataAgeMinutes = 15;
+
+		/// <summary>
+		/// When the source has gone quiet, skip the step rather than fail the setup.
+		///
+		/// The same judgement step 6 makes about a shut equity market, for the same reason: a
+		/// source with nothing to say is not evidence against a trade. Rejecting on staleness
+		/// turns every thin overnight hour into a blanket refusal, which is not a filter - it
+		/// is the step deciding the strategy may not trade at night.
+		///
+		/// Deliberately narrow, as it is for step 6. It applies once the VIX has produced a
+		/// bar at some point and then stopped. A source that has never produced one is a feed
+		/// or symbol problem and still fails loudly, because quietly disabling a confirmation
+		/// over a bad symbol is exactly the silent failure worth avoiding.
+		/// </summary>
+		public bool SkipWhenQuiet = true;
 	}
 
 	public sealed class VixConfirmation
@@ -110,6 +130,7 @@ namespace Socrates.Market
 		// number in the summary, which is not enough to act on.
 		private int rejectedNoData;
 		private int rejectedStale;
+		private int skippedQuiet;
 		private int rejectedDirection;
 		private int rejectedNotAtLevel;
 		private int confirmed;
@@ -157,6 +178,9 @@ namespace Socrates.Market
 
 		public int RejectedNoData { get { return rejectedNoData; } }
 		public int RejectedStale { get { return rejectedStale; } }
+
+		/// <summary>Setups the step stood aside on because the source had gone quiet, rather than refusing them.</summary>
+		public int SkippedQuiet { get { return skippedQuiet; } }
 		public int RejectedDirection { get { return rejectedDirection; } }
 		public int RejectedNotAtLevel { get { return rejectedNotAtLevel; } }
 		public int Confirmed { get { return confirmed; } }
@@ -194,8 +218,20 @@ namespace Socrates.Market
 
 			if (settings.MaxDataAgeMinutes > 0 && ageMinutes > settings.MaxDataAgeMinutes)
 			{
+				// hasData is already true here, so the source did trade at some point and has
+				// since gone quiet. That is a source with nothing to say, not a source
+				// disagreeing, and the two deserve different answers.
+				if (settings.SkipWhenQuiet)
+				{
+					skippedQuiet++;
+					return ConfirmationResult.Pass(string.Format(
+						"VIX quiet for {0:N0} minutes - step 5 not applicable.", ageMinutes));
+				}
+
 				rejectedStale++;
-				result.Detail = string.Format("VIX data is {0:N0} minutes old - the source is closed, so it cannot confirm.", ageMinutes);
+				result.Detail = string.Format(
+					"VIX data is {0:N0} minutes old, over the {1:N0} minute limit, and skipping is off.",
+					ageMinutes, settings.MaxDataAgeMinutes);
 				return result;
 			}
 
