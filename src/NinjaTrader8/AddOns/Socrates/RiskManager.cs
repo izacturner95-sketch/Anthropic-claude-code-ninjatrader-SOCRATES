@@ -120,6 +120,34 @@ namespace Socrates.Risk
 			connectionDown = isDown;
 		}
 
+		/// <summary>
+		/// Clears the day's counters without rolling the trading day.
+		///
+		/// Exists for one situation: the handover from historical replay to live data.
+		/// Enabling a strategy replays the loaded bars and fills trades against them, and
+		/// those fills are simulated - no order was ever sent. They nonetheless arrive here
+		/// through RecordClosedTrade, so a replay that covered a losing morning hands the
+		/// live session a halt it did not earn, and the strategy then refuses every real
+		/// setup until the session rolls. Nothing is wrong, nothing is logged by NinjaTrader,
+		/// and the day is over before anyone works out why.
+		///
+		/// Returns what was cleared so the caller can report it rather than swallow it.
+		/// </summary>
+		public string ResetDayCounters()
+		{
+			string summary = string.Format("{0} trade(s), {1} consecutive loss(es), {2:C} realised{3}",
+				tradesToday, consecutiveLosses, dailyRealisedPnL,
+				haltedForDay ? ", HALTED: " + haltReason : string.Empty);
+
+			dailyRealisedPnL = 0;
+			tradesToday = 0;
+			consecutiveLosses = 0;
+			haltedForDay = false;
+			haltReason = string.Empty;
+
+			return summary;
+		}
+
 		/// <summary>Records a completed round-turn trade and applies the daily limits.</summary>
 		public void RecordClosedTrade(double profitDollars)
 		{

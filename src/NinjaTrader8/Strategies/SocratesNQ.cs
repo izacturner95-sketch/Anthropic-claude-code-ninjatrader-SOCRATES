@@ -298,6 +298,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 				MaxTradesPerDay = 3;
 				MaxConsecutiveLosses = 2;
 
+				// Off, meaning the replay's trades are discarded at the handover to live data.
+				// They are simulated fills against bars that had already printed, and letting
+				// them arm the consecutive-loss halt or spend the trade cap means enabling the
+				// strategy on a day it has already 'lost' silences it until the session rolls.
+				// That has cost two full live days. On is the old behaviour, for a restart
+				// mid-session where the replay approximates trades that genuinely happened.
+				CarryReplayRiskState = false;
+
 				// --- Step 1: context ---
 				AtrPeriod = 14;
 				SwingStrength = 3;
@@ -874,12 +882,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			lastStatusBar = CurrentBar;
 
+			// The gate is asked outright rather than inferred from the counters. A day that
+			// produces no entries looks identical whether the sequence found nothing or
+			// something is refusing everything, and the second case has no other symptom -
+			// the rejection lines only print when a setup completes, so a gate that is shut
+			// while the market is quiet leaves no trace at all until it is too late.
+			string blockDetail;
+			EntryBlockReason block = risk.CanEnter(ToTime(Time[0]), out blockDetail);
+
 			Log(string.Format(
-				"Status: bar {0}, ATR {1:N2}, {2} levels, setup {3}. Today: {4} sweeps, {5} shifts, {6} retests, {7} entries. Day P/L {8:C}{9}.",
+				"Status: bar {0}, ATR {1:N2}, {2} levels, setup {3}. Today: {4} sweeps, {5} shifts, {6} retests, {7} entries. Day P/L {8:C}. Entries: {9}",
 				CurrentBar, atr, nq.Levels.Count, setup.State,
 				daySweeps, dayShifts, dayZoneTouches, dayEntries,
 				risk.DailyRealisedPnL,
-				risk.IsHaltedForDay ? ", HALTED: " + risk.HaltReason : string.Empty));
+				block == EntryBlockReason.None
+					? "allowed"
+					: string.Format("BLOCKED - {0}: {1}", block, blockDetail)));
 		}
 
 		#region Steps 5 and 6
@@ -1852,6 +1870,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!EnableLogging)
 				return;
 
+			// Done before anything is reported, so the banner describes the state the live
+			// session actually starts from rather than the one it is about to discard.
+			string discarded = null;
+
+			if (risk != null && !CarryReplayRiskState)
+				discarded = risk.ResetDayCounters();
+
 			Print("=== Socrates NQ - live from here ==================================");
 			Print(string.Format("  Sizing          : {0} contract(s), max {1}, {2}", FixedContracts, MaxContracts, DescribeStop()));
 			Print(string.Format("  Daily loss cap  : {0}", DescribeDailyCap()));
@@ -1872,7 +1897,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Simulated first : {0} bar(s) replayed, {1} trade(s) filled against history.",
 				barsProcessed, processedTradeCount));
 
-			if (risk != null)
+			if (discarded != null)
+			{
+				Print("  Replay risk state : DISCARDED - " + discarded);
+				Print("                      None of that was real, so none of it counts against today.");
+				Print("                      Trading starts from a clean day. Set 'Carry replay risk state'");
+				Print("                      to keep it instead.");
+			}
+			else if (risk != null)
 			{
 				Print(string.Format("  Carried into today: {0} of {1} trades used, {2} consecutive loss(es), day P/L {3:C}.",
 					risk.TradesToday,
@@ -1883,8 +1915,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (risk.IsHaltedForDay)
 				{
 					Print("  HALTED for the day on replayed trades: " + risk.HaltReason);
-					Print("           No live entry will be taken until the session rolls. Disable the halt");
-					Print("           or restart after the roll if that is not what you want.");
+					Print("           No live entry will be taken until the session rolls. Clear");
+					Print("           'Carry replay risk state' if that is not what you want.");
 				}
 				else if (MaxTradesPerDay > 0 && risk.TradesToday >= MaxTradesPerDay)
 				{
@@ -1894,9 +1926,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (Position.MarketPosition != MarketPosition.Flat)
 			{
-				Print(string.Format("  Replay ended holding {0} {1} @ {2:N2}. StartBehavior is {3}, so live orders",
+				Print(string.Format("  WARNING: replay ended holding {0} {1} @ {2:N2}, and StartBehavior is {3}.",
 					Position.Quantity, Position.MarketPosition, Position.AveragePrice, StartBehavior));
-				Print("           wait until that simulated position is flat.");
+				Print("           No live order will be submitted until that simulated position closes, and");
+				Print("           it closes only when its simulated stop or target is reached. If neither is");
+				Print("           near, this strategy will do nothing for the rest of the day. Restart it");
+				Print("           flat, or wait for the position to resolve, and check back here.");
 			}
 
 			if (setup != null && setup.State != SetupState.Idle)
@@ -2711,6 +2746,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, int.MaxValue)]
 		[Display(Name = "Max consecutive losses", Description = "0 disables.", GroupName = "2. Risk", Order = 8)]
 		public int MaxConsecutiveLosses { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Carry replay risk state", Description = "Off by default. Enabling a strategy replays every loaded bar and fills trades against them; those fills are simulated but still count towards the day's trade cap and still arm the consecutive-loss halt, so a strategy enabled on a morning the replay scores as two losses will refuse every real setup until the session rolls, silently. Off discards that state at the switch to live data and logs what it discarded. Turn it on only when restarting mid-session and you want the replay's approximation of trades that really happened to keep counting.", GroupName = "2. Risk", Order = 9)]
+		public bool CarryReplayRiskState { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(1, int.MaxValue)]

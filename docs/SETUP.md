@@ -286,20 +286,29 @@ running on the same chart.
 
 Two consequences are worth knowing, because both are silent.
 
-**The replay's trades count.** They increment the day's trade counter, they arm the
-consecutive-loss halt, and they move the day's P/L — all of it inside this instance,
-none of it real. Restart with **Max trades per day** at 3 into a morning the replay
-scores as three trades and the strategy will not take a live entry until the session
-rolls, while printing nothing about why. It now says so: the `live from here` banner is
-printed at the handover and reports what was carried in, including a halt.
+**The replay's trades used to count, and it cost two live days.** They incremented the
+day's trade counter, armed the consecutive-loss halt and moved the day's P/L — all of it
+inside the strategy, none of it real. Enable the strategy on a morning the replay scores
+as two losses and it would refuse every genuine setup until the session rolled, printing
+nothing about why. The symptom is exactly the one that sends you looking in the wrong
+place: a full day of no trades, then a restart that shows the trades it "should" have
+taken, because the second replay simulates them again.
 
-**A replay that ends holding a position blocks live orders.** `StartBehavior` is
-`WaitUntilFlat`, so the strategy waits for that simulated position to close before it
-will trade for real. The banner reports that too.
+That state is now **discarded at the handover to live data**, and the banner reports what
+it threw away. **Carry replay risk state** puts the old behaviour back, for a restart
+mid-session where the replay approximates trades that genuinely happened.
 
-Neither is a reason to avoid restarting — it is how the platform works. But if you
-restart mid-session and want a clean slate, restart after the 18:00 roll, or read the
-banner and know what you are looking at.
+**A replay that ends holding a position still blocks live orders.** `StartBehavior` is
+`WaitUntilFlat`, so nothing is submitted until that simulated position closes — and it
+closes only when its simulated stop or target is hit. If neither is near, the strategy
+does nothing for the rest of the day. The banner warns when the replay ends in a
+position; if you see it, restart the strategy flat rather than waiting.
+
+**Set `Status every N bars` low enough to see a live day.** It ships at 120, which on a
+5-minute chart is ten hours — one line per session. At 12 you get an hourly heartbeat,
+and each one states outright whether entries are currently allowed and what is blocking
+them if not. Rejection lines only print when a setup completes, so a shut gate during a
+quiet market leaves no other trace.
 
 The chart drawings behave the same way and are worth reading with the same caution: a
 stop line, target line and entry arrow on a past bar mean "the sequence completed here",
