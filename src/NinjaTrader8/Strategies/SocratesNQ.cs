@@ -1433,6 +1433,63 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		/// <summary>
+		/// What the broker did with an order, which until now nothing reported.
+		///
+		/// The log could say ENTRY and the account could show nothing, with no line anywhere
+		/// explaining the gap. A prop firm's risk layer sits between this strategy and the
+		/// exchange and will refuse orders on its own terms - position limits, product
+		/// permissions, a daily loss rule of its own, trading windows - and NinjaTrader
+		/// records that in the Orders tab rather than in the Output window anyone is reading.
+		///
+		/// Realtime only. A backtest fills everything and would drown the window.
+		/// </summary>
+		protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice,
+			int quantity, int filled, double averageFillPrice, OrderState orderState, DateTime time,
+			ErrorCode error, string comment)
+		{
+			if (State != State.Realtime || order == null)
+				return;
+
+			if (orderState == OrderState.Rejected)
+			{
+				Log(string.Format("ORDER REJECTED: {0} {1} x{2} - {3} {4}",
+					order.Name, order.OrderAction, order.Quantity, error, comment));
+				Log("        The strategy asked for this trade and the broker refused it. Nothing in the");
+				Log("        strategy can fix that - check the Orders and Log tabs, and your account's own");
+				Log("        rules on size, product and trading hours.");
+				return;
+			}
+
+			// A working order disappearing without a fill is the quieter version of the same
+			// problem, and the one that looks like the strategy simply never traded.
+			if (orderState == OrderState.Cancelled && filled == 0)
+			{
+				Log(string.Format("Order cancelled unfilled: {0} {1} x{2}. {3}",
+					order.Name, order.OrderAction, order.Quantity,
+					string.IsNullOrEmpty(comment) ? "No reason given." : comment));
+			}
+		}
+
+		/// <summary>
+		/// Fills. The line that says a decision became a position, so its absence after an
+		/// ENTRY line localises the problem to order routing rather than to the sequence.
+		/// </summary>
+		protected override void OnExecutionUpdate(Execution execution, string executionId, double price,
+			int quantity, MarketPosition marketPosition, string orderId, DateTime time)
+		{
+			if (State != State.Realtime || execution == null || execution.Order == null)
+				return;
+
+			if (execution.Order.OrderState != OrderState.Filled
+				&& execution.Order.OrderState != OrderState.PartFilled)
+				return;
+
+			Log(string.Format("FILL: {0} {1} x{2} @ {3:N2}. Position now {4} {5}.",
+				execution.Order.Name, marketPosition, quantity, price,
+				Position.MarketPosition, Position.Quantity));
+		}
+
+		/// <summary>
 		/// Connection health, which gates new entries.
 		///
 		/// Only while live. This fires during startup too, and a status arriving mid-replay

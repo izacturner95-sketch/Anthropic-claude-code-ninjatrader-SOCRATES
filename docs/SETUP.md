@@ -310,6 +310,36 @@ and each one states outright whether entries are currently allowed and what is b
 them if not. Rejection lines only print when a setup completes, so a shut gate during a
 quiet market leaves no other trace.
 
+### Reading a live day that produced nothing
+
+Four lines, in order. The first one missing localises the problem.
+
+| Look for | Present means | Absent means |
+|---|---|---|
+| `=== Socrates NQ - live from here ===` | Realtime was reached | The strategy never left replay — check **Control Center → Log** |
+| `Status: ... Entries: allowed` | Bars are being evaluated live, gate open | No heartbeat at all: `OnBarUpdate` is not running. `Entries: BLOCKED - reason` names the gate |
+| `ENTRY Long x1 @ ...` | The sequence completed and the order went out | The sequence found nothing — read the funnel in the run summary |
+| `FILL: ... Position now Long 1` | The order became a position | `ORDER REJECTED` names the broker's reason; silence means it is still working |
+
+The gap between `ENTRY` and `FILL` is the one nothing used to report. A prop firm's risk
+layer sits between this strategy and the exchange and refuses orders on its own terms —
+size, product permissions, its own daily loss rule, its own trading windows — and
+NinjaTrader records that in the Orders tab, not the Output window. Both outcomes are now
+logged.
+
+### Testing the live path without waiting a day
+
+**Market Replay** is the answer to "will it actually trade tomorrow". It feeds recorded
+tick data through the strategy at speed, and — this is the part that matters — it runs the
+**realtime** code path: `State.Realtime`, live bar processing, real order submission
+against the simulator. A backtest exercises none of that, which is exactly why a strategy
+can backtest perfectly and do nothing live.
+
+Download a replay day for NQ (**Tools → Historical Data → Load**, Market Replay tab),
+connect to the Playback connection, and run the strategy against it. If it trades in
+replay, the realtime path works. If it does not, you have the same four lines above to
+read and no money at risk while you read them.
+
 The chart drawings behave the same way and are worth reading with the same caution: a
 stop line, target line and entry arrow on a past bar mean "the sequence completed here",
 not "an order existed here".
