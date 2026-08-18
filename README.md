@@ -6,9 +6,11 @@ A liquidity sweep is detected against a book of reference levels, confirmed by a
 market structure shift, entered on the retest, and gated on the VIX moving inversely
 and the Magnificent 7 participating in the same direction.
 
-**Status: first implementation, not yet compiled.** It has never been through the
-NinjaTrader compiler, so expect a round of errors on first import. Nothing here has
-been backtested, and no claim is made that it is profitable.
+**Status: compiles, backtests, and has run on a sim account.** Measured results over
+several windows sit around a 1.4–1.7 profit factor on 40–75 trade samples; a much better
+looking twelve-day run exists and is not evidence of anything. Steps 5 and 6 cannot be
+backtested over a useful range on a NinjaTrader feed — see `docs/SETUP.md` section 9 —
+so both remain unproven. No claim is made that any of it is profitable.
 
 ## The six steps
 
@@ -89,7 +91,7 @@ The engine classes are plain C# with no NinjaTrader dependencies. Only
 | NQ daily, weekly | Prior period levels and pivots | always |
 | NQ 4-hour | 4-hour pivots | **Use 4-hour pivots** on |
 | `VX` | Step 5 | **VIX mode** not Off |
-| `SAAPL`, `SMSFT`, `SNVDA`, `SAMZN`, `SMETA`, `SGOOGL`, `STSLA` | Step 6 | **Breadth mode** not Off |
+| `SAAPL`, `SMSFT`, `SNVDA`, `SAMZN`, `SMETA`, `SGOOG`, `STSLA` | Step 6 | **Breadth mode** not Off |
 
 **Steps 5 and 6 ship Off.** With both on the strategy loads twelve series, and every
 one must exist in your feed or NinjaTrader will not start the strategy at all — it
