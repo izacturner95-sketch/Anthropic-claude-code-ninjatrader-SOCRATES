@@ -600,6 +600,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 						Name = "VIX",
 						Path = VixFile,
 						AtrPeriod = AtrPeriod,
+						FreshMinutes = VixMaxDataAgeMinutes > 0 ? VixMaxDataAgeMinutes : VixBarMinutes * 3,
 						ReloadSeconds = FileReloadSeconds,
 						TimestampOffsetMinutes = FileTimeOffsetMinutes
 					});
@@ -674,6 +675,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 									Name = breadthSymbols[i],
 									Path = paths[i],
 									AtrPeriod = AtrPeriod,
+									FreshMinutes = BreadthBarMinutes * 3,
 									ReloadSeconds = FileReloadSeconds,
 									TimestampOffsetMinutes = FileTimeOffsetMinutes
 								});
@@ -2749,11 +2751,31 @@ namespace NinjaTrader.NinjaScript.Strategies
 				file.Name, file.Hits, file.Lookups, hitRate,
 				file.Loads > 1 ? string.Format(", re-read {0} times", file.Loads - 1) : string.Empty));
 
+			// Split, because the two halves answer different questions and only the first
+			// one is about the file being wired up correctly. A source that is shut for
+			// part of the session answers every lookup and is current for none of them.
+			if (file.Hits > 0)
+			{
+				Print(string.Format("                   of those, {0} current and {1} from an older row{2}",
+					file.HitsCurrent, file.HitsStale,
+					file.HitsStale > 0
+						? string.Format(" (mean {0:N0} min behind, worst {1:N0})", file.StaleMinutesMean, file.StaleMinutesMax)
+						: string.Empty));
+
+				if (file.HitsCurrent == 0)
+					Print("                   NOTE: not one reading was current. The file's hours do not");
+				else if (file.HitsStale > file.HitsCurrent)
+					Print("                   NOTE: mostly answered from stale rows - the source covers a");
+			}
+
 			// A miss before the file's first row is a history problem; a miss after its
 			// last is a file that stopped. Different fixes, so they are counted apart.
 			if (file.MissesBefore > 0)
 				Print(string.Format("                   {0} lookups fell before the first row - not enough history.",
 					file.MissesBefore));
+
+			if (file.Hits > 0 && (file.HitsCurrent == 0 || file.HitsStale > file.HitsCurrent))
+				Print("                   smaller part of the session than the chart does.");
 
 			if (hitRate < 50.0)
 			{

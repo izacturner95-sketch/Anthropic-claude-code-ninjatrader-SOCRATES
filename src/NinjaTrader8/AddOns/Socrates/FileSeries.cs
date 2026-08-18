@@ -54,6 +54,12 @@ namespace Socrates.Data
 		/// zone is not the machine's. Positive moves file timestamps later.
 		/// </summary>
 		public int TimestampOffsetMinutes = 0;
+
+		/// <summary>
+		/// How recent a row has to be to count as a current reading, for reporting only -
+		/// nothing is refused on it. Sized to the source's bar period by the caller.
+		/// </summary>
+		public double FreshMinutes = 15;
 	}
 
 	/// <summary>
@@ -91,6 +97,17 @@ namespace Socrates.Data
 		private int missesBefore;
 		private int missesAfter;
 
+		// A hit is not the same as a current reading. TryGetAt answers with the most recent
+		// row at or before the time asked for, so once the file's first row is behind you
+		// every lookup is answered - including at 3am against a row from yesterday
+		// afternoon. Hit rate alone therefore reads 100% for a file covering a third of the
+		// session, which makes it a test of whether the timestamps line up and nothing more.
+		// Freshness is the second half of the question.
+		private int hitsCurrent;
+		private int hitsStale;
+		private double staleMinutesSum;
+		private double staleMinutesMax;
+
 		public FileSeries(FileSeriesSettings settings)
 		{
 			if (settings == null)
@@ -109,6 +126,15 @@ namespace Socrates.Data
 
 		public int Lookups { get { return lookups; } }
 		public int Hits { get { return hits; } }
+
+		/// <summary>Hits whose row was inside the freshness window - a genuinely live reading.</summary>
+		public int HitsCurrent { get { return hitsCurrent; } }
+
+		/// <summary>Hits answered from a row older than the freshness window. Real data, just not current.</summary>
+		public int HitsStale { get { return hitsStale; } }
+
+		public double StaleMinutesMean { get { return hitsStale > 0 ? staleMinutesSum / hitsStale : 0; } }
+		public double StaleMinutesMax { get { return staleMinutesMax; } }
 		public int MissesBefore { get { return missesBefore; } }
 		public int MissesAfter { get { return missesAfter; } }
 
@@ -523,6 +549,21 @@ namespace Socrates.Data
 				}
 
 				hits++;
+
+				double ageMinutes = (when - bars[index].Time).TotalMinutes;
+
+				if (ageMinutes > settings.FreshMinutes)
+				{
+					hitsStale++;
+					staleMinutesSum += ageMinutes;
+
+					if (ageMinutes > staleMinutesMax)
+						staleMinutesMax = ageMinutes;
+				}
+				else
+				{
+					hitsCurrent++;
+				}
 
 				bar = bars[index];
 				barAtr = index < atr.Count ? atr[index] : 0;
