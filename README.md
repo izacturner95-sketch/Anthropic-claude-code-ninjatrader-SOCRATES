@@ -194,6 +194,13 @@ It is a port, not a second source of truth. Two differences matter before compar
 numbers: there is no 1-minute fill series, so a bar touching both stop and target
 resolves on TradingView's own assumption; and commission and slippage live in the
 strategy's Properties tab rather than in the script, so they are zero until you set them.
+**Alerts** are TradingView-only, and are the reason to run this build even if NinjaTrader
+is doing the trading: entries, exits, the end-of-day flatten and the risk halt can all
+reach a phone or a webhook. Set **Message format** to JSON if a bridge has to parse it.
+One alert covers every event — the setup instructions are a comment block at the bottom
+of the `.pine` file, and the one step people miss is putting
+`{{strategy.order.alert_message}}` in the alert's message box.
+
 The trade is that TradingView carries VIX and US equity data, which makes steps 5 and 6
 testable there — on a futures-only NinjaTrader feed they are not. Step 6 also has a
 **Leader hours** setting the NinjaTrader build has no equivalent for: on Extended it

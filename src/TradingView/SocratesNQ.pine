@@ -50,6 +50,7 @@ gRetest = "6. Step 4 - Retest"
 gVix    = "7. Step 5 - VIX"
 gBrd    = "8. Step 6 - Leaders"
 gChart  = "9. Chart"
+gAlert  = "10. Alerts"
 
 fixedContracts = input.int(1, "Fixed contracts", minval = 1, group = gSize)
 maxContracts   = input.int(1, "Max contracts", minval = 1, group = gSize)
@@ -106,6 +107,10 @@ vixSymbol     = input.symbol("CBOE:VIX", "VIX symbol", group = gVix,
 vixLookback   = input.int(6, "VIX lookback bars", minval = 1, group = gVix)
 vixMinMove    = input.float(0.02, "VIX min move (floor)", minval = 0, step = 0.01, group = gVix)
 vixMinMoveAtr = input.float(0.5, "VIX min move (ATR)", minval = 0, step = 0.1, group = gVix)
+vixMaxAgeMin  = input.int(90, "VIX max data age (minutes)", minval = 0, group = gVix,
+     tooltip = "How stale the VIX reading may be and still confirm. CBOE:VIX publishes continuously through its session, so this rarely bites on the index. It matters on a VX futures symbol: the contract is open nearly 23 hours but a bar only forms when someone trades, and overnight VX can go well over an hour without a print. 0 disables the check.")
+vixSkipQuiet  = input.bool(true, "VIX skip when quiet", group = gVix,
+     tooltip = "Past the age limit, stand aside rather than refuse the setup - the same judgement step 6 makes about a closed equity market. A source with nothing to say is not evidence against a trade, and refusing on staleness is not a filter, it is the step deciding the strategy may not trade at night. A symbol that has never returned data still fails.")
 
 breadthMode = input.string("Off", "Breadth mode", options = ["Off", "Directional"], group = gBrd)
 ldr1 = input.symbol("NASDAQ:AAPL",  "Leader 1", group = gBrd)
@@ -132,6 +137,28 @@ showLevels  = input.bool(false, "Show reference levels", group = gChart,
 showPanel   = input.bool(true, "Show stats panel", group = gChart)
 showFunnel  = input.bool(true, "Show funnel panel", group = gChart,
      tooltip = "How far down the six steps price actually got, and what turned each setup away. This is the panel to read when the strategy takes no trades - it names the step that is stopping them.")
+
+// Alerts. TradingView wires these up in two different places and it is worth knowing
+// which is which before setting one:
+//
+//   "Order fills only"        - fires on entries and exits. The text comes from the
+//                               alert_message attached to each order, so use the
+//                               {{strategy.order.alert_message}} placeholder in the
+//                               alert body and it fills itself in.
+//   "alert() function calls"  - fires on the events below that are not order fills,
+//                               such as a setup arming. Those carry their own text.
+//
+// Setting both on one alert is fine and is what most people want.
+alertsOn     = input.bool(true, "Enable alerts", group = gAlert,
+     tooltip = "Builds the message text. It does not create the alert - do that from the chart's Alert dialog, picking this strategy as the condition. See the notes at the bottom of this file.")
+alertFormat  = input.string("Plain text", "Message format", options = ["Plain text", "JSON (webhook)"], group = gAlert,
+     tooltip = "Plain text reads well on a phone. JSON is for a webhook that has to parse it - a broker bridge, a bot, a logger.")
+alertTag     = input.string("SOCRATES", "Tag", group = gAlert,
+     tooltip = "Included in every message. Use it to tell instances apart when several are running, or to route on it at the receiving end.")
+alertOnEntry = input.bool(true, "Alert on entry", group = gAlert)
+alertOnExit  = input.bool(true, "Alert on exit", group = gAlert)
+alertOnArmed = input.bool(false, "Alert when a setup arms", group = gAlert,
+     tooltip = "Fires when a setup reaches the retest zone and is waiting for its trigger - the point at which a discretionary trader would want to be looking at the chart. Off by default: it fires far more often than entries do, since most setups never complete.")
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -210,6 +237,37 @@ swingBeyond(array<float> prices, float px, float minDistance, bool above) =>
 isBullish(bool buySide, bool cont) => cont ? buySide : not buySide
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Alert messages
+//
+// Built here rather than inline so the two formats stay in step and so an order and its
+// alert can never describe different prices - they are handed the same numbers.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Prices are formatted with format.mintick so a webhook never receives 23000.250000001,
+// and str.tostring on a float without a format string is not reliable for that.
+px(float v) => str.tostring(v, format.mintick)
+
+// action is the verb a receiver acts on: buy, sell, or exit. kind and rr are context.
+alertText(string action, string kind, float entryPx, float stopPx, float targetPx, float rr, float qtyN) =>
+    alertFormat == "JSON (webhook)"
+         ? '{"tag":"' + alertTag + '","action":"' + action + '","symbol":"' + syminfo.ticker +
+           '","kind":"' + kind + '","qty":' + str.tostring(qtyN) +
+           ',"price":' + px(entryPx) + ',"stop":' + px(stopPx) + ',"target":' + px(targetPx) +
+           ',"rr":' + str.tostring(rr, "#.##") + ',"time":"' + str.format_time(time, "yyyy-MM-dd HH:mm", "America/New_York") + ' ET"}'
+         : alertTag + ' ' + str.upper(action) + ' ' + syminfo.ticker + ' x' + str.tostring(qtyN) +
+           ' @ ' + px(entryPx) + '  |  stop ' + px(stopPx) + '  target ' + px(targetPx) +
+           '  (' + str.tostring(rr, "#.##") + 'R ' + kind + ')'
+
+// Exits carry no target and no ratio, so they get their own shape rather than a version
+// of the above with three fields set to na.
+exitText(string reason, string kind) =>
+    alertFormat == "JSON (webhook)"
+         ? '{"tag":"' + alertTag + '","action":"exit","symbol":"' + syminfo.ticker +
+           '","kind":"' + kind + '","reason":"' + reason +
+           '","time":"' + str.format_time(time, "yyyy-MM-dd HH:mm", "America/New_York") + ' ET"}'
+         : alertTag + ' EXIT ' + syminfo.ticker + '  |  ' + reason + ' (' + kind + ')'
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Session arithmetic - HHmmss integers in Eastern time, as in NinjaTrader
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -273,6 +331,13 @@ p4c = request.security(syminfo.tickerid, "240", close[1], lookahead = barmerge.l
 
 vixClose = request.security(vixSymbol, timeframe.period, close, lookahead = barmerge.lookahead_off)
 vixAtr   = request.security(vixSymbol, timeframe.period, ta.atr(atrPeriod), lookahead = barmerge.lookahead_off)
+
+// The source bar's own timestamp, which is the only way to tell a live reading from a
+// forward-filled one. request.security repeats the last known value when the requested
+// symbol has not printed, so vixClose looks perfectly healthy while being hours old -
+// it does not fail, it silently agrees, and that is worse. Comparing the source's clock
+// to the chart's is the direct analogue of the NinjaTrader build's staleness guard.
+vixTime  = request.security(vixSymbol, timeframe.period, time, lookahead = barmerge.lookahead_off)
 
 // Each leader as a percent move - "is this name participating", the measure the
 // NinjaTrader build uses. ticker.modify is what makes the extended session available:
@@ -462,6 +527,7 @@ var int rejStopBand = 0   // stop outside the min/max tick band
 var int rejBudget   = 0   // risk larger than the day's remaining budget
 var int rejVix      = 0   // step 5
 var int rejBreadth  = 0   // step 6
+var int skipVix     = 0   // step 5 stood aside, source quiet
 
 // The stop distribution over completed setups. Choosing the tick band without it is
 // guesswork - on the NinjaTrader side the band and the distribution did not overlap
@@ -678,6 +744,17 @@ else if stState == 2
         if not stZoneTouched and low <= zoneUp and high >= zoneDn
             stZoneTouched := true
             nTouches += 1
+
+            // Not an order fill, so this needs alert() rather than an alert_message. It
+            // fires on the bar the retest is first touched - the point a discretionary
+            // trader would want to be looking at the chart, before any trigger.
+            if alertsOn and alertOnArmed
+                alert(alertFormat == "JSON (webhook)"
+                     ? '{"tag":"' + alertTag + '","action":"armed","symbol":"' + syminfo.ticker +
+                       '","side":"' + (bull ? "long" : "short") + '","zone":' + px(stZoneCenter) + '}'
+                     : alertTag + ' ARMED ' + syminfo.ticker + ' ' + (bull ? "long" : "short") +
+                       ' setup in its retest zone at ' + px(stZoneCenter),
+                     alert.freq_once_per_bar_close)
         confirms = not requireConfirm or (bull ? (close > open and close > zoneDn) : (close < open and close < zoneUp))
         if stZoneTouched and confirms
             stopPx = bull ? stRetestExtreme - atr * stopBufferAtr : stRetestExtreme + atr * stopBufferAtr
@@ -725,8 +802,19 @@ vixMove = vixClose - vixClose[vixLookback]
 // the cash session is unreachable overnight, and the step then refuses everything.
 vixThreshold = math.max(vixMinMove, nz(vixAtr) * vixMinMoveAtr)
 
+// How long ago the VIX actually printed. na means the symbol has never returned data,
+// which is a feed or symbol problem and is not the same as a quiet one.
+vixAgeMin  = na(vixTime) ? na : (time - vixTime) / 60000.0
+vixStale   = vixMaxAgeMin > 0 and not na(vixAgeMin) and vixAgeMin > vixMaxAgeMin
+
+// Standing aside, not agreeing. The distinction matters for the funnel: a step that
+// skipped 60 setups and judged 4 is not a filter, whatever its confirm count says.
+vixQuiet   = vixMode != "Off" and vixStale and vixSkipQuiet
+
 // The VIX moves inversely: a long wants it falling, a short wants it rising.
-vixAgrees = vixMode == "Off" ? true : na(vixClose) ? false : entryLong ? vixMove <= -vixThreshold : vixMove >= vixThreshold
+vixAgrees  = vixMode == "Off" or vixQuiet ? true :
+     na(vixClose) or vixStale ? false :
+     entryLong ? vixMove <= -vixThreshold : vixMove >= vixThreshold
 
 leaderAligned(float pct, bool isLong, float minMove) =>
     na(pct) or math.abs(pct) < minMove ? false : isLong ? pct > 0 : pct < 0
@@ -791,6 +879,9 @@ canEnter = entryFire and strategy.position_size == 0 and withinSession and not s
      stopTicks >= minStopTicks and stopTicks <= maxStopTicks and riskDollars <= budgetLeft and
      vixAgrees and breadthAgrees
 
+if entryFire and vixQuiet
+    skipVix += 1
+
 // Which gate turned the setup away, in the order the gate itself applies them. Only the
 // first reason is counted, so the columns sum to the setups refused rather than to the
 // number of tests that happened to be failing at the time.
@@ -836,18 +927,29 @@ qty = math.min(fixedContracts, maxContracts)
 // being submitted and being recorded: the id is the only link between an entry and its
 // exit, and a link that resolves at runtime is a link that can fail to.
 if canEnter
+    plannedRr = math.abs(entryTarget - close) / math.abs(close - entryStop)
+    kindTxt   = entryCont ? "continuation" : "sweep"
+
+    // Built before the orders so the entry, its exit and the alert all quote the same
+    // numbers. The exit message is attached to the bracket, so a stop or target filling
+    // days later still explains itself.
+    entryMsg = not alertsOn or not alertOnEntry ? "" :
+         alertText(entryLong ? "buy" : "sell", kindTxt, close, entryStop, entryTarget, plannedRr, qty)
+    exitMsg  = not alertsOn or not alertOnExit ? "" :
+         exitText("stop or target", kindTxt)
+
     if entryLong and entryCont
-        strategy.entry("contLong", strategy.long, qty = qty)
-        strategy.exit("contLong x", from_entry = "contLong", stop = entryStop, limit = entryTarget)
+        strategy.entry("contLong", strategy.long, qty = qty, alert_message = entryMsg)
+        strategy.exit("contLong x", from_entry = "contLong", stop = entryStop, limit = entryTarget, alert_message = exitMsg)
     else if entryLong
-        strategy.entry("sweepLong", strategy.long, qty = qty)
-        strategy.exit("sweepLong x", from_entry = "sweepLong", stop = entryStop, limit = entryTarget)
+        strategy.entry("sweepLong", strategy.long, qty = qty, alert_message = entryMsg)
+        strategy.exit("sweepLong x", from_entry = "sweepLong", stop = entryStop, limit = entryTarget, alert_message = exitMsg)
     else if entryCont
-        strategy.entry("contShort", strategy.short, qty = qty)
-        strategy.exit("contShort x", from_entry = "contShort", stop = entryStop, limit = entryTarget)
+        strategy.entry("contShort", strategy.short, qty = qty, alert_message = entryMsg)
+        strategy.exit("contShort x", from_entry = "contShort", stop = entryStop, limit = entryTarget, alert_message = exitMsg)
     else
-        strategy.entry("sweepShort", strategy.short, qty = qty)
-        strategy.exit("sweepShort x", from_entry = "sweepShort", stop = entryStop, limit = entryTarget)
+        strategy.entry("sweepShort", strategy.short, qty = qty, alert_message = entryMsg)
+        strategy.exit("sweepShort x", from_entry = "sweepShort", stop = entryStop, limit = entryTarget, alert_message = exitMsg)
 
     nEntries += 1
     tradesToday += 1
@@ -855,7 +957,6 @@ if canEnter
     liveTarget := entryTarget
     liveCont := entryCont
 
-    plannedRr = math.abs(entryTarget - close) / math.abs(close - entryStop)
     rrSum += plannedRr
     rrCount += 1
 
@@ -868,12 +969,16 @@ if canEnter
              color = color.new(entryLong ? color.blue : color.orange, 25),
              textcolor = color.white, size = size.small)
 
-// End-of-day flatten outranks everything.
+// End-of-day flatten outranks everything. Both carry their own alert text: a position
+// closed by the clock or by a risk halt is exactly the exit you want to hear about, and
+// it is the one the bracket's message would not describe.
 if shouldFlatten and strategy.position_size != 0
-    strategy.close_all("flatten")
+    strategy.close_all("flatten",
+         alert_message = not alertsOn or not alertOnExit ? "" : exitText("end of day flatten", liveCont ? "continuation" : "sweep"))
 
 if haltedToday and strategy.position_size != 0
-    strategy.close_all("risk halt")
+    strategy.close_all("risk halt",
+         alert_message = not alertsOn or not alertOnExit ? "" : exitText("risk halt", liveCont ? "continuation" : "sweep"))
 
 if strategy.position_size == 0
     liveStop := na
@@ -956,7 +1061,7 @@ if showVisuals and showPanel and barstate.islast
 // above 0 with entries at 0 sends you to the rejection rows underneath.
 // ═══════════════════════════════════════════════════════════════════════════
 
-var table funnel = table.new(position.bottom_right, 2, 19, bgcolor = color.new(color.black, 20), border_width = 1)
+var table funnel = table.new(position.bottom_right, 2, 20, bgcolor = color.new(color.black, 20), border_width = 1)
 
 // Global scope only, so it cannot be folded into the block below.
 funnelRow(int row, string label, string value, color valueColor) =>
@@ -1010,6 +1115,12 @@ if showVisuals and showFunnel and barstate.islast
          str.tostring(rejStopBand) + "/" + str.tostring(rejBudget) + "/" + str.tostring(rejVix) + "/" + str.tostring(rejBreadth),
          rejStopBand + rejBudget + rejVix + rejBreadth > 0 ? color.orange : dim)
 
+    // Standing aside is not judging. A step that skipped far more setups than it ruled
+    // on is an RTH filter wearing a 24-hour label, and the confirm count will not say so.
+    if vixMode != "Off"
+        funnelRow(19, "step 5 skipped (quiet)", str.tostring(skipVix),
+             skipVix > rejVix ? color.orange : dim)
+
 // The stop distribution, against the band that admits a trade. These have to overlap.
 // On the NinjaTrader build they did not - the band was 100 ticks and the setups were
 // arriving at 356 to 958 - and nothing in the output said so until this was added.
@@ -1038,11 +1149,44 @@ if showVisuals and showFunnel and barstate.islast
 // the chart at all means the script hit a runtime error rather than found no trades:
 // look for the red marker beside the script name and open it for the message.
 //
+// ═══════════════════════════════════════════════════════════════════════════
+// Setting up alerts
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The script builds the message text; TradingView creates the alert. Once, from the
+// chart:
+//
+//   1. Right-click the chart -> Add alert, or press the alarm clock icon.
+//   2. Condition: pick "Socrates NQ" (the strategy), not the symbol.
+//   3. Under it, tick BOTH:
+//        - "Order fills only"       -> entries, stops, targets, flatten, risk halt
+//        - "alert() function calls" -> setup armed, if you turned that on
+//   4. Message: replace the default with exactly
+//
+//        {{strategy.order.alert_message}}
+//
+//      That placeholder is what pulls in the text this script built. Leave the default
+//      in place and you get TradingView's generic wording instead, with none of the
+//      stop, target or ratio in it.
+//   5. Notifications tab: app, email, or Webhook URL. Set "Message format" to JSON
+//      here if you are pointing it at a webhook that has to parse it.
+//
+// One alert covers every event. There is no need for one per order type - the message
+// says which it is, and the "action" field is the verb to route on: buy, sell, exit,
+// armed.
+//
+// Alerts fire on bar close, because the strategy calculates on bar close. An alert that
+// fired intrabar would be describing a setup that may not exist by the time the bar
+// finishes, which is the whole reason this strategy waits for a confirmation close.
+//
 // Better here:
 //   - VIX and US equities have data on TradingView, so steps 5 and 6 are testable. On a
 //     NinjaTrader futures feed they are not, which is why both ship Off there. They ship
 //     Off here too, so a first run matches the NinjaTrader baseline before anything else
 //     is switched on.
+//   - Alerts. The NinjaTrader build trades the account directly and has no equivalent;
+//     here the strategy can drive a phone notification or a webhook without being the
+//     thing that presses the button. See "Setting up alerts" above.
 //   - Step 6 can run overnight. 'Leader hours' on Extended requests pre- and post-market
 //     data, 04:00-20:00 ET, which covers most of the Globex session. The NinjaTrader
 //     build has no equivalent: there is no overnight ticker for AAPL on that feed, so
@@ -1064,6 +1208,12 @@ if showVisuals and showFunnel and barstate.islast
 //     and there is no Output window to print a reason to.
 //
 // Carried over deliberately, because the NinjaTrader runs measured it:
+//   - Step 5 stands aside when the VIX source has gone quiet rather than refusing the
+//     setup. request.security forward-fills, so a stale reading looks healthy and
+//     silently agrees; the source bar's own timestamp is what separates the two. On
+//     CBOE:VIX this rarely bites. On a VX futures symbol it decides whether the strategy
+//     trades overnight at all - on the NinjaTrader side the derived 15-minute limit was
+//     refusing every setup after hours, and nothing said so.
 //   - The stop anchors to the retest pullback, not the swept extreme. The extreme
 //     measured 169-810 ticks; the pullback measured 80-434.
 //   - Continuations ship off. Unselective they produced 144 of 147 entries at -0.08R.
