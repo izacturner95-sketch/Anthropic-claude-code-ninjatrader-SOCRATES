@@ -102,11 +102,34 @@ def write(frame, path):
     return written, hours
 
 
+def default_out():
+    """Where a NinjaTrader user most likely wants these, offered as the default."""
+    return os.path.join(os.path.expanduser("~"), "Documents", "NinjaTrader 8", "SocratesData")
+
+
+def prompt_for_out():
+    """Ask, when the script was launched without arguments - a double-click, usually."""
+    suggestion = default_out()
+
+    sys.stderr.write("\nWhere should the CSV files go?\n")
+    sys.stderr.write("Press Enter for: %s\n> " % suggestion)
+    sys.stderr.flush()
+
+    try:
+        typed = sys.stdin.readline().strip().strip('"')
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+    return typed or suggestion
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Download VIX and leader bars for Socrates steps 5 and 6.")
-    parser.add_argument("--out", required=True, metavar="DIR",
-                        help="directory to write the CSVs into")
+    # Not required, so that double-clicking the file on Windows reaches the prompt
+    # below instead of dying in argparse and taking the console window with it.
+    parser.add_argument("--out", metavar="DIR",
+                        help="directory to write the CSVs into; prompted for if omitted")
     parser.add_argument("--symbols", nargs="+", default=DEFAULT_SYMBOLS,
                         help="symbols to fetch (default: ^VIX and the Magnificent 7)")
     parser.add_argument("--interval", default="5m",
@@ -119,19 +142,27 @@ def main(argv=None):
                              "extended hours, or it is blind outside 09:30-16:00")
     args = parser.parse_args(argv)
 
+    out = args.out or prompt_for_out()
+
+    if not out:
+        sys.stderr.write("error: no output directory given.\n")
+        return 1
+
     try:
         import yfinance  # noqa: F401
     except ImportError:
-        sys.stderr.write("error: yfinance is not installed. Run: pip install yfinance\n")
+        sys.stderr.write(
+            "error: yfinance is not installed.\n"
+            "       Open a command prompt and run:  pip install yfinance\n")
         return 1
 
-    if not os.path.isdir(args.out):
-        os.makedirs(args.out)
+    if not os.path.isdir(out):
+        os.makedirs(out)
 
     failures = 0
 
     for symbol in args.symbols:
-        path = os.path.join(args.out, safe_name(symbol) + ".csv")
+        path = os.path.join(out, safe_name(symbol) + ".csv")
 
         try:
             frame = fetch(symbol, args.interval, args.period, not args.no_prepost)
@@ -174,4 +205,25 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # A double-click on Windows gives no arguments and closes the console the moment
+    # the process ends, which turns every message this script prints - including the
+    # one telling you what went wrong - into a flash. Hold the window open in that
+    # case, and only in that case, so running it from a shell stays scriptable.
+    launched_by_click = len(sys.argv) == 1
+    code = 1
+
+    try:
+        code = main()
+    except KeyboardInterrupt:
+        sys.stderr.write("\ncancelled.\n")
+    except Exception as error:
+        sys.stderr.write("\nunexpected error: %s\n" % error)
+    finally:
+        if launched_by_click:
+            sys.stderr.write("\nDone. Press Enter to close.\n")
+            try:
+                sys.stdin.readline()
+            except Exception:
+                pass
+
+    sys.exit(code)

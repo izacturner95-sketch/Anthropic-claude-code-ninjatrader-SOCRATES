@@ -287,10 +287,23 @@ file answers questions about timestamps inside it.
 `tools/fetch_market_data.py` downloads the VIX and all seven leaders and writes them in
 the format below, ready to point at:
 
+**On Windows**, double-click `tools/fetch_market_data.bat`. It finds Python, writes into
+`Documents\NinjaTrader 8\SocratesData`, and holds the window open so you can read what
+happened. Install yfinance first, once, from a command prompt:
+
 ```
 pip install yfinance
+```
+
+**From a shell**, on any platform:
+
+```
 python3 tools/fetch_market_data.py --out "C:/Users/you/Documents/NinjaTrader 8/SocratesData"
 ```
+
+Double-clicking the `.py` directly also works — it asks where to put the files and pauses
+before closing. What it will not do is run silently and vanish, which is what a bare
+double-click on a script with required arguments does.
 
 It defaults to 5-minute bars, 60 days, extended hours on, and reports the row count and
 date span for each symbol — plus a warning when a download came back regular-hours only,
