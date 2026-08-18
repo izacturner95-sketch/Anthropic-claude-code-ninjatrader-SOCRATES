@@ -2115,6 +2115,49 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		/// <summary>
+		/// Whether the files are current enough to be worth anything live.
+		///
+		/// The one failure a file source has that a platform series does not: it is a
+		/// snapshot, and going live with a stale one means the confirmations stand aside
+		/// for the rest of the session. That is the safe behaviour and it is still not the
+		/// behaviour anyone intended, so it is said plainly at the moment it starts to
+		/// matter rather than left for the summary.
+		/// </summary>
+		private void WarnOnStaleFiles()
+		{
+			if (!filesActive)
+				return;
+
+			DateTime now = DateTime.Now;
+
+			WarnIfStale(vixFile, now, "Step 5");
+
+			for (int i = 0; i < leaderFiles.Length; i++)
+				WarnIfStale(leaderFiles[i], now, "Step 6");
+		}
+
+		private void WarnIfStale(FileSeries file, DateTime now, string step)
+		{
+			if (file == null || file.RowCount == 0)
+				return;
+
+			double hoursBehind = (now - file.LastTime).TotalHours;
+
+			// Overnight gaps and weekends are normal for an equity file, so the threshold is
+			// generous. This is meant to catch a file nobody is updating, not one waiting
+			// for Monday.
+			if (hoursBehind < 72)
+				return;
+
+			Print(string.Format("  WARNING: file '{0}' ends {1:N0} hours ago ({2:yyyy-MM-dd HH:mm}).",
+				file.Name, hoursBehind, file.LastTime));
+			Print(string.Format("           Nothing is updating it, so {0} will stand aside for the whole", step));
+			Print("           session rather than confirm against a frozen reading. Either point the");
+			Print("           parameter back at the platform series for live trading, or run whatever");
+			Print("           writes this file - it is re-read automatically when it changes.");
+		}
+
+		/// <summary>
 		/// What each file actually contains, and whether it lines up with the chart.
 		///
 		/// A file an hour out does not fail. It answers every lookup with a row from the
@@ -2259,6 +2302,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 					Print("  Trade cap already reached on replayed trades - no live entry until the roll.");
 				}
 			}
+
+			// A file is a snapshot. It has history, which is the whole reason for using one,
+			// and it stops at whatever moment it was written - which in a backtest is
+			// invisible and correct, and going live means a confirmation reading a number
+			// from last Tuesday. The staleness guard catches it and stands the step aside,
+			// so nothing is confirmed against a frozen value, but "step 5 quietly stopped
+			// applying" is not something to discover from a run summary a week later.
+			WarnOnStaleFiles();
 
 			if (Position.MarketPosition != MarketPosition.Flat)
 			{

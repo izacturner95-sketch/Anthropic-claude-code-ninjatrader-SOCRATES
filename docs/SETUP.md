@@ -357,7 +357,31 @@ rather than duplicating them. Append or rewrite, whichever is easier.
 A file that stops updating falls through to the staleness logic step 5 already has: past
 **VIX max data age** the step stands aside rather than confirming against a reading that
 has stopped moving. A stalled file degrades the strategy to steps 1–4 instead of poisoning
-it.
+it, and the handover to live data warns when a file ends more than three days back.
+
+### Backtest and forward are not the same problem
+
+A file is a snapshot. It has history — that is the whole reason to use one — and it stops
+at the moment it was written. In a backtest that is invisible and correct. Going live, it
+means the confirmations read a number from whenever you last exported.
+
+Three ways to run, and the choice is a real one:
+
+| | Backtest | Live | Cost |
+|---|---|---|---|
+| **File both** | full history | current, if something keeps writing it | you have to run that something |
+| **Platform both** | weeks only | current | steps 5 and 6 stay unvalidated |
+| **File back, platform live** | full history | current | **you validate on one source and trade on another** |
+
+The third looks like the best of both and is the one to be careful with. Cash-equity
+history and CME single stock futures are not the same instrument: the futures are thinner,
+so a leader reads flat while the share moves, and `Min leader move (%)` calibrated on one
+is wrong for the other. The same applies to `^VIX` history against live VX, which prices
+in contango and moves on its own schedule.
+
+If you go that way, treat the backtest as evidence the *logic* is sound, not as a measured
+expectation for the live configuration — and re-check the thresholds once the platform
+instruments have enough history to be measured on directly.
 
 ---
 
