@@ -27,6 +27,7 @@ using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.Data;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.Indicators;
+using Socrates.Data;
 using Socrates.Market;
 using Socrates.Risk;
 using Socrates.Strategy;
@@ -56,6 +57,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int idxFill = -1;
 		private int expectedSeriesCount;
 		private string[] breadthSymbols = new string[0];
+
+		// External feeds. When these are in play the VIX and leader platform series are not
+		// added at all, so the backtest range stops being dragged down to the youngest
+		// contract - which is what has truncated every step 5 and 6 run so far.
+		private ExternalFeed vixFeed;
+		private ExternalFeed[] breadthFeeds = new ExternalFeed[0];
+		private bool externalFeedsActive;
+		private int feedMissAtBar;
 		private double[] breadthSessionOpen = new double[0];
 
 		// --- Session tracking ---
@@ -418,6 +427,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 				VixMaxDataAgeMinutes = 90;
 				VixSkipWhenQuiet = true;
 
+				// --- External data ---
+				//
+				// Blank means use the platform's own series, which is the previous behaviour
+				// and what a feed-less setup wants. Point these at your own server and the
+				// VIX and leader platform series are not requested at all, which is the real
+				// prize: the backtest range stops being dragged down to the youngest
+				// contract's history.
+				VixFeedSource = string.Empty;
+				BreadthFeedSources = string.Empty;
+				FeedPollSeconds = 30;
+				FeedTimestampOffsetMinutes = 0;
+
 				// --- Step 6: breadth ---
 				//
 				// CME single stock futures, not the cash shares. NinjaTrader's feed carries no
@@ -536,6 +557,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				// Series are added only when the step that needs them is enabled, so a data
 				// feed without index or equity coverage can still run steps 1-4.
+				StopExternalPolling();
+				vixFeed = null;
+				breadthFeeds = new ExternalFeed[0];
+				externalFeedsActive = false;
+				feedMissAtBar = 0;
+
 				idxFill = idxDaily = idxWeekly = idxFourHour = idxVix = idxBreadthStart = -1;
 				breadthSymbols = new string[0];
 				breadthSessionOpen = new double[0];
@@ -565,10 +592,31 @@ namespace NinjaTrader.NinjaScript.Strategies
 					idxFourHour = next++;
 				}
 
+					// A feed source replaces the platform series entirely. Adding both would put
+				// the contract's short history back into the range calculation for no gain.
+				bool vixFromFeed = VixMode != ConfirmationMode.Off && ExternalFeed.LooksUsable(VixFeedSource);
+
+				if (vixFromFeed)
+				{
+					vixFeed = new ExternalFeed(new ExternalFeedSettings
+					{
+						Name = "VIX",
+						Source = VixFeedSource,
+						PollSeconds = FeedPollSeconds,
+						AtrPeriod = AtrPeriod,
+						TimestampOffsetMinutes = FeedTimestampOffsetMinutes
+					});
+
+					externalFeedsActive = true;
+				}
+
 				if (VixMode != ConfirmationMode.Off)
 				{
-					AddDataSeries(VixSymbol, BarsPeriodType.Minute, VixBarMinutes);
-					idxVix = next++;
+					if (!vixFromFeed)
+					{
+						AddDataSeries(VixSymbol, BarsPeriodType.Minute, VixBarMinutes);
+						idxVix = next++;
+					}
 
 					// The VIX is used only to confirm direction from its own pivots and swing
 					// levels, so order block detection is off for it.
@@ -605,15 +653,59 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 					if (breadthSymbols.Length > 0)
 					{
-						idxBreadthStart = next;
+						// One source per leader, in the same order as the symbols, so a feed
+						// URL template and a symbol list stay aligned by position. A blank or
+						// unusable entry falls back to the platform series for that leader,
+						// which makes a partial migration possible.
+						string[] feedSources = ParseSymbols(BreadthFeedSources);
+						breadthFeeds = new ExternalFeed[breadthSymbols.Length];
+
+						bool anyBreadthFeed = false;
 
 						for (int i = 0; i < breadthSymbols.Length; i++)
 						{
-							AddDataSeries(breadthSymbols[i], BarsPeriodType.Minute, BreadthBarMinutes);
-							next++;
+							string source = i < feedSources.Length ? feedSources[i] : null;
+
+							if (!ExternalFeed.LooksUsable(source))
+								continue;
+
+							breadthFeeds[i] = new ExternalFeed(new ExternalFeedSettings
+							{
+								Name = breadthSymbols[i],
+								Source = source,
+								PollSeconds = FeedPollSeconds,
+								AtrPeriod = AtrPeriod,
+								TimestampOffsetMinutes = FeedTimestampOffsetMinutes
+							});
+
+							anyBreadthFeed = true;
+							externalFeedsActive = true;
 						}
 
-							breadthSessionOpen = new double[breadthSymbols.Length];
+						// Only the leaders without a feed need a platform series, and they
+						// have to keep contiguous indices for the BarsInProgress routing to
+						// work - so this is all-or-nothing per step rather than per symbol.
+						bool allBreadthFromFeeds = anyBreadthFeed;
+
+						for (int i = 0; i < breadthSymbols.Length; i++)
+						{
+							if (breadthFeeds[i] == null)
+								allBreadthFromFeeds = false;
+						}
+
+						if (!allBreadthFromFeeds)
+						{
+							breadthFeeds = new ExternalFeed[breadthSymbols.Length];
+							idxBreadthStart = next;
+
+							for (int i = 0; i < breadthSymbols.Length; i++)
+							{
+								AddDataSeries(breadthSymbols[i], BarsPeriodType.Minute, BreadthBarMinutes);
+								next++;
+							}
+						}
+
+						breadthSessionOpen = new double[breadthSymbols.Length];
 
 						breadth = new BreadthConfirmation(new BreadthConfirmationSettings
 						{
@@ -642,14 +734,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			else if (State == State.DataLoaded)
 			{
+				// Fetched here rather than on the first bar: blocking is acceptable in this
+				// state, and a feed that cannot be reached should say so before a single bar
+				// is processed rather than turning into a step that quietly never confirms.
+				LoadExternalFeeds();
 				LogStartupBanner();
 			}
 			else if (State == State.Realtime)
 			{
+				// Polling starts only now. A backtest has nothing to poll for, and a
+				// background thread hammering a server through a 40,000 bar run would be
+				// both useless and rude.
+				StartExternalPolling();
 				LogRealtimeHandover();
 			}
 			else if (State == State.Terminated)
 			{
+				StopExternalPolling();
+
 				// The template instance NinjaTrader builds to read SetDefaults also passes
 				// through Terminated, so only report for an instance that actually ran.
 				if (barsProcessed > 0)
@@ -726,6 +828,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				OnNewTradingDay(closingDay, closingPnL, closingHalt);
 
 			TrackSessionRanges(timeOfDay);
+
+			if (externalFeedsActive)
+				PullExternalFeeds();
 
 			double atr = ATR(AtrPeriod)[0];
 			if (atr <= 0)
@@ -980,6 +1085,118 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			SubmitEntry(result, strength);
 		}
+
+		#region External feeds
+
+		private void LoadExternalFeeds()
+		{
+			if (vixFeed != null)
+			{
+				string error;
+
+				if (vixFeed.FetchNow(out error))
+					Log(string.Format("VIX feed: {0} bars, {1:yyyy-MM-dd HH:mm} to {2:yyyy-MM-dd HH:mm}.",
+						vixFeed.BarCount, vixFeed.FirstBarTime, vixFeed.LastBarTime));
+				else
+					Log("VIX feed FAILED: " + error + ". Step 5 will find no data.");
+			}
+
+			for (int i = 0; i < breadthFeeds.Length; i++)
+			{
+				if (breadthFeeds[i] == null)
+					continue;
+
+				string error;
+
+				if (breadthFeeds[i].FetchNow(out error))
+					Log(string.Format("Leader feed {0}: {1} bars, {2:yyyy-MM-dd HH:mm} to {3:yyyy-MM-dd HH:mm}.",
+						breadthFeeds[i].Name, breadthFeeds[i].BarCount,
+						breadthFeeds[i].FirstBarTime, breadthFeeds[i].LastBarTime));
+				else
+					Log(string.Format("Leader feed {0} FAILED: {1}.", breadthFeeds[i].Name, error));
+			}
+		}
+
+		private void StartExternalPolling()
+		{
+			if (vixFeed != null)
+				vixFeed.StartPolling();
+
+			for (int i = 0; i < breadthFeeds.Length; i++)
+			{
+				if (breadthFeeds[i] != null)
+					breadthFeeds[i].StartPolling();
+			}
+		}
+
+		private void StopExternalPolling()
+		{
+			if (vixFeed != null)
+				vixFeed.Stop();
+
+			for (int i = 0; i < breadthFeeds.Length; i++)
+			{
+				if (breadthFeeds[i] != null)
+					breadthFeeds[i].Stop();
+			}
+		}
+
+		/// <summary>
+		/// Pull the feeds forward to this bar's time.
+		///
+		/// Called from the primary series rather than from a BarsInProgress branch, because
+		/// a feed is not a series - there is no bar event to hang it on. The lookup asks for
+		/// the most recent feed bar at or before now, so a source on a different period, or
+		/// one that simply did not print, degrades to a stale reading rather than a wrong
+		/// one. Staleness is then step 5's own business, and it already knows what to do
+		/// with it.
+		/// </summary>
+		private void PullExternalFeeds()
+		{
+			if (vixFeed != null && vix != null)
+			{
+				ExternalBar bar;
+				double feedAtr;
+				double reference;
+
+				if (vixFeed.TryGetAt(Time[0], VixLookbackBars, out bar, out feedAtr, out reference))
+				{
+					vixBarsSeen++;
+					vix.Update(CurrentBar, bar.Time, bar.Open, bar.High, bar.Low, bar.Close, reference, feedAtr);
+					vixUpdatesApplied++;
+				}
+				else
+				{
+					feedMissAtBar++;
+				}
+			}
+
+			if (breadth == null)
+				return;
+
+			for (int i = 0; i < breadthFeeds.Length; i++)
+			{
+				if (breadthFeeds[i] == null)
+					continue;
+
+				ExternalBar bar;
+				double feedAtr;
+				double reference;
+
+				if (!breadthFeeds[i].TryGetAt(Time[0], 1, out bar, out feedAtr, out reference))
+					continue;
+
+				double sessionOpen;
+
+				if (!breadthFeeds[i].TryGetSessionOpen(Time[0], out sessionOpen) || sessionOpen <= 0)
+					continue;
+
+				breadthSessionOpen[i] = sessionOpen;
+				breadth.SetComponent(i, bar.Close, sessionOpen, bar.Time);
+			}
+		}
+
+		#endregion
 
 		private void UpdateVix()
 		{
@@ -1864,6 +2081,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 			}
 
+			LogExternalFeedBanner();
 			LogRiskConsistency();
 
 			if (BreadthMode != ConfirmationMode.Off)
@@ -1916,6 +2134,59 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StopBufferAtr, TargetBufferTicks, MinRewardRisk));
 
 			Print("===================================================================");
+		}
+
+		/// <summary>
+		/// Feed status, and the one comparison that catches a time-zone mistake.
+		///
+		/// A feed an hour out does not fail. It answers every lookup with a bar from the
+		/// wrong hour, the confirmations quietly read the wrong volatility, and the only
+		/// symptom is results that are worse for no reason. Printing the first feed bar
+		/// beside the chart's first bar makes an offset visible in one line.
+		/// </summary>
+		private void LogExternalFeedBanner()
+		{
+			if (!externalFeedsActive)
+				return;
+
+			DateTime chartStart = BarsArray != null && BarsArray[0] != null && BarsArray[0].Count > 0
+				? BarsArray[0].GetTime(0)
+				: DateTime.MinValue;
+
+			Print("  --- external feeds ---");
+			Print(string.Format("  Chart starts    : {0:yyyy-MM-dd HH:mm}", chartStart));
+
+			if (vixFeed != null)
+				PrintFeedLine(vixFeed, chartStart);
+
+			for (int i = 0; i < breadthFeeds.Length; i++)
+			{
+				if (breadthFeeds[i] != null)
+					PrintFeedLine(breadthFeeds[i], chartStart);
+			}
+
+			Print(string.Format("  Polling         : {0}",
+				FeedPollSeconds > 0
+					? string.Format("every {0}s once live; a backtest fetches once", FeedPollSeconds)
+					: "off - the startup fetch is all there is"));
+		}
+
+		private void PrintFeedLine(ExternalFeed feed, DateTime chartStart)
+		{
+			if (feed.BarCount == 0)
+			{
+				Print(string.Format("  {0,-15} : EMPTY. {1}", feed.Name,
+					string.IsNullOrEmpty(feed.LastError) ? "No rows parsed." : feed.LastError));
+				return;
+			}
+
+			Print(string.Format("  {0,-15} : {1} bars, {2:yyyy-MM-dd HH:mm} to {3:yyyy-MM-dd HH:mm}{4}",
+				feed.Name, feed.BarCount, feed.FirstBarTime, feed.LastBarTime,
+				feed.ParseFailures > 0 ? string.Format(", {0} rows unparsed", feed.ParseFailures) : string.Empty));
+
+			if (chartStart > DateTime.MinValue && feed.FirstBarTime > chartStart)
+				Print(string.Format("                    NOTE: starts {0:N0} days after the chart - step is blind before then.",
+					(feed.FirstBarTime - chartStart).TotalDays));
 		}
 
 		/// <summary>
@@ -3019,6 +3290,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public bool VixSkipWhenQuiet { get; set; }
 
 		[NinjaScriptProperty]
+		[Display(Name = "VIX feed source", Description = "URL or file path supplying VIX bars, replacing the platform series entirely. Blank uses the platform. Rows are 'timestamp,open,high,low,close' - 'timestamp,close' also works - with the timestamp as epoch seconds, epoch milliseconds, or ISO-8601 carrying a zone. A zoneless timestamp is read as UTC. This is the way to give step 5 a history longer than the current VX contract has existed.", GroupName = "7. Step 5 - VIX", Order = 9)]
+		public string VixFeedSource { get; set; }
+
+		[NinjaScriptProperty]
 		[Display(Name = "Breadth mode", GroupName = "8. Step 6 - Leaders", Order = 0)]
 		public ConfirmationMode BreadthMode { get; set; }
 
@@ -3050,6 +3325,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, 235959)]
 		[Display(Name = "Leaders close (HHmmss)", GroupName = "8. Step 6 - Leaders", Order = 6)]
 		public int BreadthActiveEnd { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Leader feed sources", Description = "Comma separated, one per leader in the same order as 'Leader symbols', so position aligns the two lists. Same row format as the VIX feed. All seven must be supplied or none are used - the platform series need contiguous indices, so this is all-or-nothing per step rather than per symbol.", GroupName = "8. Step 6 - Leaders", Order = 7)]
+		public string BreadthFeedSources { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 3600)]
+		[Display(Name = "Feed poll (seconds)", Description = "How often a feed is re-fetched while live, on a background thread. A backtest fetches once and never polls. 0 disables polling, leaving the single startup fetch - fine for a file that does not change, wrong for a live server.", GroupName = "9. Diagnostics", Order = 5)]
+		public int FeedPollSeconds { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(-1440, 1440)]
+		[Display(Name = "Feed time offset (minutes)", Description = "Correction applied to feed timestamps after the UTC conversion, for a platform whose display time zone is not the machine's. Leave at 0 and check the banner: it prints the first feed bar's time beside the chart's first bar, and if those are hours apart this is the setting to fix it with.", GroupName = "9. Diagnostics", Order = 6)]
+		public int FeedTimestampOffsetMinutes { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Show chart visuals", Description = "Draw stop and target lines, entry markers and the stats panel. Skipped automatically when there is no chart, so the Strategy Analyzer is unaffected either way.", GroupName = "10. Chart", Order = 0)]
