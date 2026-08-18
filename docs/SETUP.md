@@ -282,6 +282,35 @@ before its youngest series, so a VX contract listed three weeks ago was truncati
 step 5 run to three weeks. A file is not a series — the primary decides the range and the
 file answers questions about timestamps inside it.
 
+### Getting the files
+
+`tools/fetch_market_data.py` downloads the VIX and all seven leaders and writes them in
+the format below, ready to point at:
+
+```
+pip install yfinance
+python3 tools/fetch_market_data.py --out "C:/Users/you/Documents/NinjaTrader 8/SocratesData"
+```
+
+It defaults to 5-minute bars, 60 days, extended hours on, and reports the row count and
+date span for each symbol — plus a warning when a download came back regular-hours only,
+which otherwise looks identical to a correct one.
+
+**Free intraday history is the binding constraint**, not the tooling. Yahoo serves roughly
+60 days of 5-minute bars and 7 days of 1-minute, whatever you ask for. Options:
+
+| Source | Free intraday | Free daily | Notes |
+|---|---|---|---|
+| Yahoo (this script) | ~60 days at 5m | decades | one command, extended hours included |
+| Alpha Vantage | ~2 years at 5m | decades | free key, rate limited to a handful of calls a day |
+| CBOE | none | VIX back to 1990 | official, and the best long VIX history there is |
+
+For a backtest longer than 60 days, `--interval 1d --period 5y` gives years of daily bars.
+Set the strategy's bar-minutes parameter to 1440 to match. That changes step 5's question
+from "is the VIX moving inversely right now" to "is it down on the day" — a weaker signal,
+and a different one, but a testable one. Testable beats unmeasured, which is what both
+steps have been so far.
+
 ### The format
 
 One row per bar. Blank lines and lines starting with `#` are ignored. Commas or
