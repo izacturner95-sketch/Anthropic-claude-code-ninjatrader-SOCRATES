@@ -187,6 +187,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// it. The run summary then reports what the vetoed trades actually did, which is the
 		// only honest way to price a filter on data this short: forwards, on trades that
 		// really closed, accumulating a sample instead of waiting for one.
+		// Results split by setup kind. Continuations have been on and off three times now on
+		// the strength of aggregate numbers, which cannot answer the question: a run can be
+		// profitable while one of its two setup types loses money, and blending them hides
+		// exactly that. 56 of 82 entries being continuations makes the split the difference
+		// between measuring the strategy and measuring an average of two strategies.
+		private readonly List<bool> pendingIsContinuation = new List<bool>();
+		private int revTrades, revWon;
+		private double revGrossProfit, revGrossLoss;
+		private int contTrades, contWon;
+		private double contGrossProfit, contGrossLoss;
+
 		private readonly List<bool> pendingVixVeto = new List<bool>();
 		private readonly List<bool> pendingBreadthVeto = new List<bool>();
 		private bool shadowVixVetoed;
@@ -1540,6 +1551,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// taken. One position at a time and one entry per direction, so pairing the
 			// oldest unmatched entry with the next closed trade holds.
 			pendingRiskDollars.Add(stopDistanceTicks * TickValueDollars * contracts);
+			pendingIsContinuation.Add(result.IsContinuation);
 			pendingVixVeto.Add(shadowVixVetoed);
 			pendingBreadthVeto.Add(shadowBreadthVetoed);
 
@@ -1959,6 +1971,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 			vixUpdatesApplied = 0;
 
 			pendingRiskDollars.Clear();
+			pendingIsContinuation.Clear();
+			revTrades = revWon = contTrades = contWon = 0;
+			revGrossProfit = revGrossLoss = contGrossProfit = contGrossLoss = 0;
+
 			pendingVixVeto.Clear();
 			pendingBreadthVeto.Clear();
 			shadowVixVetoed = shadowBreadthVetoed = false;
@@ -2527,7 +2543,42 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double riskDollars = pendingRiskDollars[0];
 			pendingRiskDollars.RemoveAt(0);
 
-			// Popped in step with the risk, so the three lists cannot drift apart.
+			if (pendingIsContinuation.Count > 0)
+			{
+				bool wasContinuation = pendingIsContinuation[0];
+				pendingIsContinuation.RemoveAt(0);
+
+				if (wasContinuation)
+				{
+					contTrades++;
+
+					if (profitDollars > 0)
+					{
+						contWon++;
+						contGrossProfit += profitDollars;
+					}
+					else
+					{
+						contGrossLoss += -profitDollars;
+					}
+				}
+				else
+				{
+					revTrades++;
+
+					if (profitDollars > 0)
+					{
+						revWon++;
+						revGrossProfit += profitDollars;
+					}
+					else
+					{
+						revGrossLoss += -profitDollars;
+					}
+				}
+			}
+
+			// Popped in step with the risk, so the lists cannot drift apart.
 			bool vixVetoed = false;
 			bool breadthVetoed = false;
 
@@ -2705,10 +2756,66 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 			}
 
+			LogKindVerdict();
 			LogFileVerdict();
 			LogShadowVerdict();
 
 			Print("  These are backtest fills. Model commission and slippage before believing any of it.");
+		}
+
+		/// <summary>
+		/// Reversals and continuations, priced separately.
+		///
+		/// These are two different trades wearing one set of results. A continuation runs
+		/// with a break that held; a reversal trades against a raid that failed. Nothing
+		/// says they should earn at the same rate, and when one setup type supplies most of
+		/// the entries the blended profit factor is mostly describing that one - so turning
+		/// continuations on and off by watching the total has been answering a different
+		/// question each time, depending on the mix.
+		/// </summary>
+		private void LogKindVerdict()
+		{
+			if (revTrades + contTrades == 0)
+				return;
+
+			Print("  --- by setup kind ---");
+			PrintKind("Reversals", revTrades, revWon, revGrossProfit, revGrossLoss);
+			PrintKind("Continuations", contTrades, contWon, contGrossProfit, contGrossLoss);
+
+			// The comparison the totals cannot make. Stated in dollars per trade because
+			// risk varies many-fold here and R does not survive that.
+			if (revTrades > 0 && contTrades > 0)
+			{
+				double revPer = (revGrossProfit - revGrossLoss) / revTrades;
+				double contPer = (contGrossProfit - contGrossLoss) / contTrades;
+
+				Print(string.Format("  Per trade       : reversals {0:C0}, continuations {1:C0}.", revPer, contPer));
+
+				if (revPer > 0 && contPer <= 0)
+					Print("  The continuations are losing money the reversals are making. Turn them off.");
+				else if (contPer > 0 && revPer <= 0)
+					Print("  The continuations are carrying this. The reversals are the ones to question.");
+				else if (revPer > 0 && contPer > 0)
+					Print("  Both kinds are paying. The mix is a preference, not a correction.");
+				else
+					Print("  Neither kind is paying. The problem is upstream of the mix.");
+			}
+		}
+
+		private void PrintKind(string label, int trades, int won, double grossProfit, double grossLoss)
+		{
+			if (trades == 0)
+			{
+				Print(string.Format("  {0,-15} : none", label));
+				return;
+			}
+
+			double factor = grossLoss > 0 ? grossProfit / grossLoss : 0;
+
+			Print(string.Format("  {0,-15} : {1} trades, {2} won ({3:N0}%), net {4:C0}, factor {5}, {6:C0} each",
+				label, trades, won, (won * 100.0) / trades, grossProfit - grossLoss,
+				factor > 0 ? string.Format("{0:N2}", factor) : "-",
+				(grossProfit - grossLoss) / trades));
 		}
 
 		/// <summary>
