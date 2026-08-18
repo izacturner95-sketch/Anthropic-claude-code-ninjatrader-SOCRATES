@@ -274,7 +274,83 @@ MSFT, NVDA, AMZN, META, GOOGL, TSLA` and set **Leaders open / close** to `093000
 `160000` — imported share data is cash-session only, and leaving the window at `0`/`0`
 would have the step reaching for overnight bars that are not in the file.
 
-## 9. Steps 5 and 6 cannot be backtested, and what to do about it
+## 9. Feeding steps 5 and 6 from a file
+
+**VIX file** and **Leader files** take a full path to a CSV. A path there replaces that
+platform series entirely, and that is the point: a multi-series backtest cannot begin
+before its youngest series, so a VX contract listed three weeks ago was truncating every
+step 5 run to three weeks. A file is not a series — the primary decides the range and the
+file answers questions about timestamps inside it.
+
+### The format
+
+One row per bar. Blank lines and lines starting with `#` are ignored. Commas or
+semicolons, so the output of `tools/to_ninjatrader_csv.py` works unchanged.
+
+```
+timestamp,open,high,low,close
+1755604500,23.10,23.25,23.02,23.18
+```
+
+`timestamp,close` alone is accepted for a source that only publishes a level. You lose
+the ATR scaling in step 5's threshold and nothing else. Extra trailing columns are ignored.
+
+**Timestamps** may be epoch seconds, epoch milliseconds, or a date-time string. A string
+carrying a zone is honoured; one without is read as **UTC**.
+
+### Checking it worked
+
+Two places say so, and both matter — a file that loads perfectly can still be read zero
+times. The banner reports what is in each file and how it sits against the chart:
+
+```
+--- file-backed sources ---
+Chart covers    : 2026-06-18 18:00 to 2026-08-19 16:45
+VIX            : 17640 rows, 2026-06-18 18:00 to 2026-08-19 16:45
+SAAPL          : 12480 rows, 2026-01-02 09:30 to 2026-08-19 16:00
+Re-read         : every 60s once live, and only when the file has changed
+```
+
+and the run summary reports whether anything ever came out of them:
+
+```
+--- file-backed sources: were they read? ---
+VIX            : 17612 of 17640 lookups answered (99.8%)
+SAAPL          : 4210 of 17640 lookups answered (23.9%)
+                 FEWER THAN HALF ANSWERED. If the row count above looked
+                 healthy, the timestamps do not line up with the chart - check
+                 the time zone before reading anything into this step's results.
+```
+
+**Hit rate is the number to look at.** Loading 12,000 rows proves the file parsed; it
+proves nothing about whether a single row was read. A file a time zone away loads
+perfectly and answers nothing, and every other line of output looks identical either way.
+Under 50% means the timestamps are wrong, not the data — fix it with **File time offset
+(minutes)** rather than by tuning the step.
+
+A low rate can also be honest: a leader file covering only the cash session will answer
+about a third of lookups on a 24-hour chart, and that is correct. The banner's date ranges
+tell you which of the two you are looking at.
+
+### Live
+
+The file is loaded once at startup, blocking, so an unreadable path reports itself before
+a single bar is processed. While live it is checked every **File re-read (seconds)** on a
+background thread, and only re-parsed when the file's modified time has actually moved —
+so pointing this at something a script appends to works, and polling a static file costs
+nothing. A backtest never re-reads.
+
+Rows key by timestamp, so rewriting the file with an overlapping window updates rows
+rather than duplicating them. Append or rewrite, whichever is easier.
+
+A file that stops updating falls through to the staleness logic step 5 already has: past
+**VIX max data age** the step stands aside rather than confirming against a reading that
+has stopped moving. A stalled file degrades the strategy to steps 1–4 instead of poisoning
+it.
+
+---
+
+## 10. Steps 5 and 6 cannot be backtested, and what to do about it
 
 Both read contract-based instruments — `VX` for the VIX, `SAAPL` and the rest for the
 leaders — and NinjaTrader does not carry their history across a contract roll. A backtest
@@ -315,7 +391,7 @@ reading, turn it off again.
 
 ---
 
-## 10. Disabling and re-enabling on a live chart
+## 11. Disabling and re-enabling on a live chart
 
 Turning the strategy off and on again paints trades on bars that have already printed.
 Those are not orders that were sent, and nothing went wrong. Enabling a strategy makes
@@ -387,7 +463,7 @@ not "an order existed here".
 
 ---
 
-## 11. Before going live
+## 12. Before going live
 
 In order, no skipping:
 

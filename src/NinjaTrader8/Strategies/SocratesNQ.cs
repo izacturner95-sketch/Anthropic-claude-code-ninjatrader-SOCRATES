@@ -27,6 +27,7 @@ using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.Data;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.Indicators;
+using Socrates.Data;
 using Socrates.Market;
 using Socrates.Risk;
 using Socrates.Strategy;
@@ -56,6 +57,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int idxFill = -1;
 		private int expectedSeriesCount;
 		private string[] breadthSymbols = new string[0];
+
+		// File-backed sources for steps 5 and 6. When one is in play its platform series is
+		// not added at all, which is the point: a multi-series backtest cannot begin before
+		// its youngest series, and that is what has truncated every step 5 and 6 run to the
+		// life of the current contract.
+		private FileSeries vixFile;
+		private FileSeries[] leaderFiles = new FileSeries[0];
+		private bool filesActive;
 		private double[] breadthSessionOpen = new double[0];
 
 		// --- Session tracking ---
@@ -418,6 +427,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 				VixMaxDataAgeMinutes = 90;
 				VixSkipWhenQuiet = true;
 
+				// --- File-backed sources ---
+				//
+				// Blank means use the platform's series, which is the previous behaviour.
+				// A path here replaces that series entirely, and the backtest range stops
+				// being dragged down to the youngest contract's history.
+				VixFile = string.Empty;
+				LeaderFiles = string.Empty;
+				FileReloadSeconds = 60;
+				FileTimeOffsetMinutes = 0;
+
 				// --- Step 6: breadth ---
 				//
 				// CME single stock futures, not the cash shares. NinjaTrader's feed carries no
@@ -536,6 +555,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				// Series are added only when the step that needs them is enabled, so a data
 				// feed without index or equity coverage can still run steps 1-4.
+				StopFileWatchers();
+				vixFile = null;
+				leaderFiles = new FileSeries[0];
+				filesActive = false;
+
 				idxFill = idxDaily = idxWeekly = idxFourHour = idxVix = idxBreadthStart = -1;
 				breadthSymbols = new string[0];
 				breadthSessionOpen = new double[0];
@@ -565,10 +589,31 @@ namespace NinjaTrader.NinjaScript.Strategies
 					idxFourHour = next++;
 				}
 
+				// A file replaces the platform series entirely. Adding both would put the
+				// contract's short history back into the range calculation for nothing.
+				bool vixFromFile = VixMode != ConfirmationMode.Off && FileSeries.LooksUsable(VixFile);
+
+				if (vixFromFile)
+				{
+					vixFile = new FileSeries(new FileSeriesSettings
+					{
+						Name = "VIX",
+						Path = VixFile,
+						AtrPeriod = AtrPeriod,
+						ReloadSeconds = FileReloadSeconds,
+						TimestampOffsetMinutes = FileTimeOffsetMinutes
+					});
+
+					filesActive = true;
+				}
+
 				if (VixMode != ConfirmationMode.Off)
 				{
-					AddDataSeries(VixSymbol, BarsPeriodType.Minute, VixBarMinutes);
-					idxVix = next++;
+					if (!vixFromFile)
+					{
+						AddDataSeries(VixSymbol, BarsPeriodType.Minute, VixBarMinutes);
+						idxVix = next++;
+					}
 
 					// The VIX is used only to confirm direction from its own pivots and swing
 					// levels, so order block detection is off for it.
@@ -605,15 +650,49 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 					if (breadthSymbols.Length > 0)
 					{
-						idxBreadthStart = next;
+						// One path per leader, in the same order as the symbols - position is
+						// what pairs the two lists. All or none: the leaders left on platform
+						// series need contiguous BarsInProgress indices, so this cannot be
+						// mixed symbol by symbol.
+						string[] paths = ParseSymbols(LeaderFiles);
+						bool allFromFiles = paths.Length >= breadthSymbols.Length;
 
-						for (int i = 0; i < breadthSymbols.Length; i++)
+						for (int i = 0; i < breadthSymbols.Length && allFromFiles; i++)
 						{
-							AddDataSeries(breadthSymbols[i], BarsPeriodType.Minute, BreadthBarMinutes);
-							next++;
+							if (!FileSeries.LooksUsable(paths[i]))
+								allFromFiles = false;
 						}
 
-							breadthSessionOpen = new double[breadthSymbols.Length];
+						if (allFromFiles)
+						{
+							leaderFiles = new FileSeries[breadthSymbols.Length];
+
+							for (int i = 0; i < breadthSymbols.Length; i++)
+							{
+								leaderFiles[i] = new FileSeries(new FileSeriesSettings
+								{
+									Name = breadthSymbols[i],
+									Path = paths[i],
+									AtrPeriod = AtrPeriod,
+									ReloadSeconds = FileReloadSeconds,
+									TimestampOffsetMinutes = FileTimeOffsetMinutes
+								});
+							}
+
+							filesActive = true;
+						}
+						else
+						{
+							idxBreadthStart = next;
+
+							for (int i = 0; i < breadthSymbols.Length; i++)
+							{
+								AddDataSeries(breadthSymbols[i], BarsPeriodType.Minute, BreadthBarMinutes);
+								next++;
+							}
+						}
+
+						breadthSessionOpen = new double[breadthSymbols.Length];
 
 						breadth = new BreadthConfirmation(new BreadthConfirmationSettings
 						{
@@ -642,14 +721,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			else if (State == State.DataLoaded)
 			{
+				// Loaded here rather than on the first bar: blocking is acceptable in this
+				// state, and a file that cannot be read should say so before a single bar is
+				// processed rather than becoming a step that mysteriously never confirms.
+				LoadFiles();
 				LogStartupBanner();
 			}
 			else if (State == State.Realtime)
 			{
+				// Watching starts only now. A backtest reads once; a background thread
+				// re-reading through a 40,000 bar run would be pure waste.
+				StartFileWatchers();
 				LogRealtimeHandover();
 			}
 			else if (State == State.Terminated)
 			{
+				StopFileWatchers();
+
 				// The template instance NinjaTrader builds to read SetDefaults also passes
 				// through Terminated, so only report for an instance that actually ran.
 				if (barsProcessed > 0)
@@ -726,6 +814,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				OnNewTradingDay(closingDay, closingPnL, closingHalt);
 
 			TrackSessionRanges(timeOfDay);
+
+			if (filesActive)
+				PullFiles();
 
 			double atr = ATR(AtrPeriod)[0];
 			if (atr <= 0)
@@ -980,6 +1071,110 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			SubmitEntry(result, strength);
 		}
+
+		#region File-backed sources
+
+		private void LoadFiles()
+		{
+			if (vixFile != null)
+			{
+				string error;
+
+				if (!vixFile.Load(out error))
+					Log("VIX file FAILED: " + error + ". Step 5 has no data.");
+			}
+
+			for (int i = 0; i < leaderFiles.Length; i++)
+			{
+				if (leaderFiles[i] == null)
+					continue;
+
+				string error;
+
+				if (!leaderFiles[i].Load(out error))
+					Log(string.Format("Leader file {0} FAILED: {1}.", leaderFiles[i].Name, error));
+			}
+		}
+
+		private void StartFileWatchers()
+		{
+			if (vixFile != null)
+				vixFile.StartWatching();
+
+			for (int i = 0; i < leaderFiles.Length; i++)
+			{
+				if (leaderFiles[i] != null)
+					leaderFiles[i].StartWatching();
+			}
+		}
+
+		private void StopFileWatchers()
+		{
+			if (vixFile != null)
+				vixFile.Stop();
+
+			for (int i = 0; i < leaderFiles.Length; i++)
+			{
+				if (leaderFiles[i] != null)
+					leaderFiles[i].Stop();
+			}
+		}
+
+		/// <summary>
+		/// Pull the file-backed sources forward to this bar's time.
+		///
+		/// Called from the primary series rather than a BarsInProgress branch, because a
+		/// file is not a series and has no bar event to hang off. The lookup asks for the
+		/// most recent row at or before now, so a file on a different period, or one that
+		/// simply stopped, degrades to a stale reading rather than a wrong one - and
+		/// staleness is already step 5's business.
+		/// </summary>
+		private void PullFiles()
+		{
+			if (vixFile != null && vix != null)
+			{
+				FileBar bar;
+				double fileAtr;
+				double reference;
+
+				if (vixFile.TryGetAt(Time[0], VixLookbackBars, out bar, out fileAtr, out reference))
+				{
+					vixBarsSeen++;
+
+					// The row's own timestamp is passed through, not the chart's. That is
+					// what lets the staleness guard see a file that has stopped updating -
+					// stamping it "now" would make a frozen file look perfectly live.
+					vix.Update(CurrentBar, bar.Time, bar.Open, bar.High, bar.Low, bar.Close, reference, fileAtr);
+					vixUpdatesApplied++;
+				}
+			}
+
+			if (breadth == null)
+				return;
+
+			for (int i = 0; i < leaderFiles.Length; i++)
+			{
+				if (leaderFiles[i] == null)
+					continue;
+
+				FileBar bar;
+				double fileAtr;
+				double reference;
+
+				if (!leaderFiles[i].TryGetAt(Time[0], 1, out bar, out fileAtr, out reference))
+					continue;
+
+				double sessionOpen;
+
+				if (!leaderFiles[i].TryGetSessionOpen(Time[0], out sessionOpen) || sessionOpen <= 0)
+					continue;
+
+				breadthSessionOpen[i] = sessionOpen;
+				breadth.SetComponent(i, bar.Close, sessionOpen, bar.Time);
+			}
+		}
+
+		#endregion
 
 		private void UpdateVix()
 		{
@@ -1864,6 +2059,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 			}
 
+			LogFileBanner();
 			LogRiskConsistency();
 
 			if (BreadthMode != ConfirmationMode.Off)
@@ -1916,6 +2112,81 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StopBufferAtr, TargetBufferTicks, MinRewardRisk));
 
 			Print("===================================================================");
+		}
+
+		/// <summary>
+		/// What each file actually contains, and whether it lines up with the chart.
+		///
+		/// A file an hour out does not fail. It answers every lookup with a row from the
+		/// wrong hour, the confirmations read the wrong volatility, and the only symptom is
+		/// results that are quietly worse for no reason anyone can point at. Printing the
+		/// file's first row beside the chart's first bar makes that one line instead of a
+		/// week, which is the whole reason this section exists.
+		/// </summary>
+		private void LogFileBanner()
+		{
+			if (!filesActive)
+				return;
+
+			DateTime chartStart = BarsArray != null && BarsArray[0] != null && BarsArray[0].Count > 0
+				? BarsArray[0].GetTime(0)
+				: DateTime.MinValue;
+
+			DateTime chartEnd = BarsArray != null && BarsArray[0] != null && BarsArray[0].Count > 0
+				? BarsArray[0].GetTime(BarsArray[0].Count - 1)
+				: DateTime.MinValue;
+
+			Print("  --- file-backed sources ---");
+			Print(string.Format("  Chart covers    : {0:yyyy-MM-dd HH:mm} to {1:yyyy-MM-dd HH:mm}", chartStart, chartEnd));
+
+			if (vixFile != null)
+				PrintFileLine(vixFile, chartStart, chartEnd);
+
+			for (int i = 0; i < leaderFiles.Length; i++)
+			{
+				if (leaderFiles[i] != null)
+					PrintFileLine(leaderFiles[i], chartStart, chartEnd);
+			}
+
+			Print(string.Format("  Re-read         : {0}",
+				FileReloadSeconds > 0
+					? string.Format("every {0}s once live, and only when the file has changed", FileReloadSeconds)
+					: "off - the startup load is all there is"));
+
+			if (FileTimeOffsetMinutes != 0)
+				Print(string.Format("  Time offset     : {0:+0;-0} minutes applied to every row.", FileTimeOffsetMinutes));
+		}
+
+		private void PrintFileLine(FileSeries file, DateTime chartStart, DateTime chartEnd)
+		{
+			if (file.RowCount == 0)
+			{
+				Print(string.Format("  {0,-14} : NO DATA. {1}", file.Name,
+					string.IsNullOrEmpty(file.LastError) ? "No rows parsed." : file.LastError));
+
+				if (file.RowsRejected > 0)
+					Print(string.Format("                   {0} rows rejected, first was: {1}",
+						file.RowsRejected, file.FirstRejectExample));
+
+				return;
+			}
+
+			Print(string.Format("  {0,-14} : {1} rows, {2:yyyy-MM-dd HH:mm} to {3:yyyy-MM-dd HH:mm}{4}",
+				file.Name, file.RowCount, file.FirstTime, file.LastTime,
+				file.RowsRejected > 0 ? string.Format(", {0} rejected", file.RowsRejected) : string.Empty));
+
+			if (file.RowsRejected > 0)
+				Print(string.Format("                   first rejected row: {0}", file.FirstRejectExample));
+
+			// The two ways a file is the wrong shape for the range being tested, stated in
+			// days rather than left for the reader to subtract two timestamps in their head.
+			if (chartStart > DateTime.MinValue && file.FirstTime > chartStart.AddHours(12))
+				Print(string.Format("                   STARTS {0:N0} days after the chart - the step is blind before then.",
+					(file.FirstTime - chartStart).TotalDays));
+
+			if (chartEnd > DateTime.MinValue && file.LastTime < chartEnd.AddHours(-12))
+				Print(string.Format("                   ENDS {0:N0} days before the chart - the step is blind after then.",
+					(chartEnd - file.LastTime).TotalDays));
 		}
 
 		/// <summary>
@@ -2381,9 +2652,67 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 			}
 
+			LogFileVerdict();
 			LogShadowVerdict();
 
 			Print("  These are backtest fills. Model commission and slippage before believing any of it.");
+		}
+
+		/// <summary>
+		/// Whether the files were actually answering questions.
+		///
+		/// Loading twelve thousand rows proves the file parsed. It does not prove a single
+		/// one was ever read, and a file whose timestamps are a day or a time zone away
+		/// from the chart's loads perfectly and is never hit. Hit rate is the only number
+		/// that distinguishes "the data is there" from "the data is being used", and the
+		/// two look identical in every other line of output.
+		/// </summary>
+		private void LogFileVerdict()
+		{
+			if (!filesActive)
+				return;
+
+			Print("  --- file-backed sources: were they read? ---");
+
+			if (vixFile != null)
+				PrintFileUsage(vixFile);
+
+			for (int i = 0; i < leaderFiles.Length; i++)
+			{
+				if (leaderFiles[i] != null)
+					PrintFileUsage(leaderFiles[i]);
+			}
+		}
+
+		private void PrintFileUsage(FileSeries file)
+		{
+			if (file.Lookups == 0)
+			{
+				Print(string.Format("  {0,-14} : never queried - the step it feeds did not run.", file.Name));
+				return;
+			}
+
+			double hitRate = (file.Hits * 100.0) / file.Lookups;
+
+			Print(string.Format("  {0,-14} : {1} of {2} lookups answered ({3:N1}%){4}",
+				file.Name, file.Hits, file.Lookups, hitRate,
+				file.Loads > 1 ? string.Format(", re-read {0} times", file.Loads - 1) : string.Empty));
+
+			// A miss before the file's first row is a history problem; a miss after its
+			// last is a file that stopped. Different fixes, so they are counted apart.
+			if (file.MissesBefore > 0)
+				Print(string.Format("                   {0} lookups fell before the first row - not enough history.",
+					file.MissesBefore));
+
+			if (hitRate < 50.0)
+			{
+				Print("                   FEWER THAN HALF ANSWERED. If the row count above looked");
+				Print("                   healthy, the timestamps do not line up with the chart - check");
+				Print("                   the time zone before reading anything into this step's results.");
+			}
+
+			if (file.LoadFailures > 0)
+				Print(string.Format("                   {0} load failure(s), last: {1}", file.LoadFailures, file.LastError));
 		}
 
 		/// <summary>
@@ -3019,6 +3348,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public bool VixSkipWhenQuiet { get; set; }
 
 		[NinjaScriptProperty]
+		[Display(Name = "VIX file", Description = "Full path to a CSV supplying the VIX, replacing the platform series entirely. Blank uses the platform. Rows are 'timestamp,open,high,low,close', and 'timestamp,close' also works. Timestamps may be epoch seconds, epoch milliseconds, or a date-time string - one carrying a zone is honoured, one without is read as UTC. This is how step 5 gets a history longer than the current VX contract has existed.", GroupName = "7. Step 5 - VIX", Order = 9)]
+		public string VixFile { get; set; }
+
+		[NinjaScriptProperty]
 		[Display(Name = "Breadth mode", GroupName = "8. Step 6 - Leaders", Order = 0)]
 		public ConfirmationMode BreadthMode { get; set; }
 
@@ -3050,6 +3383,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, 235959)]
 		[Display(Name = "Leaders close (HHmmss)", GroupName = "8. Step 6 - Leaders", Order = 6)]
 		public int BreadthActiveEnd { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Leader files", Description = "Comma separated full paths, one per leader in the same order as 'Leader symbols' - position pairs the two lists. Same row format as the VIX file. All must be present or none are used: the leaders left on platform series need contiguous data-series indices, so this is all-or-nothing for the step rather than per symbol.", GroupName = "8. Step 6 - Leaders", Order = 7)]
+		public string LeaderFiles { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 3600)]
+		[Display(Name = "File re-read (seconds)", Description = "How often a file is checked for changes while live, on a background thread. It is only re-parsed when the file's modified time has actually moved, so polling costs nothing. A backtest loads once and never checks. 0 disables re-reading entirely - right for a static file, wrong for one something is appending to.", GroupName = "9. Diagnostics", Order = 5)]
+		public int FileReloadSeconds { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(-1440, 1440)]
+		[Display(Name = "File time offset (minutes)", Description = "Correction applied to file timestamps after the UTC conversion, for a platform whose display time zone is not the machine's. Leave at 0 and read the banner: it prints each file's first row beside the chart's first bar, and the run summary reports what fraction of lookups were answered. A file an hour out loads perfectly and answers nothing.", GroupName = "9. Diagnostics", Order = 6)]
+		public int FileTimeOffsetMinutes { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Show chart visuals", Description = "Draw stop and target lines, entry markers and the stats panel. Skipped automatically when there is no chart, so the Strategy Analyzer is unaffected either way.", GroupName = "10. Chart", Order = 0)]
