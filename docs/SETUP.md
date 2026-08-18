@@ -215,6 +215,47 @@ place. The converter handles all three, but you have to tell it which case you a
 It also rejects rows where the open or close sits outside the high–low range, which is
 the usual sign of a mangled export.
 
+### Getting extended hours, and proving you did
+
+Equity data defaults to regular hours almost everywhere, and a file that quietly contains
+only 09:30–16:00 looks identical to a correct one until step 6 has nothing to say for two
+thirds of the session. Three things have to line up.
+
+**1. Ask the source for it.** Most APIs need it stated explicitly — `prepost=true`,
+`extended_hours=true`, `session=extended`, depending on the vendor. A plain request
+returns regular hours.
+
+**2. Check the file before importing.** `--hours` prints a bar count per hour and says so
+when there is nothing outside the cash session:
+
+```
+$ python3 tools/to_ninjatrader_csv.py AAPL_5min.csv --period 5 --stamp open --hours > AAPL.txt
+wrote 12480 bars
+bars by hour:
+  04:00     390
+  05:00     390
+  ...
+  19:00     390
+```
+
+US extended hours run 04:00–20:00 ET, so a correct file has bars from hour 4 through 19.
+Only 9 through 15 means regular hours, whatever you asked for. `--between 0400-2000`
+trims a file that came back with more than you wanted.
+
+**3. Give the instrument a session template that admits them.** This is the one that
+catches people. NinjaTrader applies a session template per instrument, and **bars outside
+it are ignored** — they import without error and then do not exist. A US equity instrument
+defaults to a regular-hours template, so ETH bars land in the database and vanish.
+
+Under **Tools → Instruments**, find the symbol, and set *Session Template* to one covering
+04:00–20:00 ET. If none of the built-ins fits, **Tools → Session Templates → New** takes a
+few minutes and is reusable across all seven leaders.
+
+Then set **Leaders open / close** to `040000` and `200000` so step 6 applies across the
+same window the data covers. The default of `0`/`0` — around the clock — is right for the
+stock futures, which run Globex hours; with cash equities it asks the step to work through
+20:00–04:00 when nothing trades.
+
 ### What to import
 
 Step 6 reads each leader at `Leader bar minutes` (5 by default), so 5-minute bars over

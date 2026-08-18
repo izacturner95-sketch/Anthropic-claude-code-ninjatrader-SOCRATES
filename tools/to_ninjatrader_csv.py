@@ -162,9 +162,39 @@ def read_rows(handle):
         yield line_number, stamp, values["open"], values["high"], values["low"], values["close"], volume
 
 
-def convert(handle, out, period_minutes, stamp, shift_minutes):
+def parse_window(text):
+    """'HHMM-HHMM' to a pair of minutes-past-midnight. May wrap midnight."""
+    if not text:
+        return None
+
+    try:
+        start_text, end_text = text.split("-")
+        start = int(start_text[:2]) * 60 + int(start_text[2:])
+        end = int(end_text[:2]) * 60 + int(end_text[2:])
+    except (ValueError, IndexError):
+        raise ConversionError(
+            "--between wants HHMM-HHMM, e.g. 0400-2000 for US equity extended hours")
+
+    return start, end
+
+
+def in_window(minutes, window):
+    if window is None:
+        return True
+
+    start, end = window
+    if start == end:
+        return True
+    if start < end:
+        return start <= minutes < end
+    return minutes >= start or minutes < end
+
+
+def convert(handle, out, period_minutes, stamp, shift_minutes, window=None,
+            hours=None):
     written = 0
     skipped_duplicate = 0
+    skipped_window = 0
     previous = None
     offset = timedelta(minutes=shift_minutes)
 
@@ -187,6 +217,20 @@ def convert(handle, out, period_minutes, stamp, shift_minutes):
                     "Sort the input ascending before converting."
                     % (line_number, ts, previous))
 
+        minutes = ts.hour * 60 + ts.minute
+
+        if not in_window(minutes, window):
+            skipped_window += 1
+            continue
+
+        # Counted after every shift and filter, so the histogram describes the file
+        # being written rather than the one that was read. Whether an equity download
+        # actually contains pre- and post-market bars is not visible any other way -
+        # a request for extended hours that silently returned regular ones looks
+        # exactly like a correct file until step 6 is quiet for two thirds of the day.
+        if hours is not None:
+            hours[ts.hour] = hours.get(ts.hour, 0) + 1
+
         if not (l <= o <= h and l <= c <= h):
             raise ConversionError(
                 "line %d: open/close outside the high-low range (o=%s h=%s l=%s c=%s)"
@@ -203,7 +247,7 @@ def convert(handle, out, period_minutes, stamp, shift_minutes):
         previous = ts
         written += 1
 
-    return written, skipped_duplicate
+    return written, skipped_duplicate, skipped_window
 
 
 def trim(value):
@@ -224,13 +268,29 @@ def main(argv=None):
     parser.add_argument("--shift-minutes", type=int, default=0, metavar="N",
                         help="add N minutes to every timestamp, to move a source in "
                              "UTC or local time into the exchange's time zone")
+    parser.add_argument("--between", metavar="HHMM-HHMM",
+                        help="keep only bars inside this window, after any shift. "
+                             "0400-2000 is US equity extended hours, 0930-1600 "
+                             "regular. May wrap midnight. Omit to keep everything")
+    parser.add_argument("--hours", action="store_true",
+                        help="print a bar count per hour to stderr, so you can see "
+                             "whether the file actually covers extended hours")
     args = parser.parse_args(argv)
+
+    try:
+        window = parse_window(args.between)
+    except ConversionError as error:
+        sys.stderr.write("error: %s\n" % error)
+        return 1
+
+    hours = {} if args.hours else None
 
     handle = open(args.input, newline="") if args.input else sys.stdin
 
     try:
-        written, duplicates = convert(
-            handle, sys.stdout, args.period, args.stamp, args.shift_minutes)
+        written, duplicates, outside = convert(
+            handle, sys.stdout, args.period, args.stamp, args.shift_minutes,
+            window, hours)
     except ConversionError as error:
         sys.stderr.write("error: %s\n" % error)
         return 1
@@ -238,9 +298,24 @@ def main(argv=None):
         if args.input:
             handle.close()
 
-    sys.stderr.write("wrote %d bars%s\n" % (
+    sys.stderr.write("wrote %d bars%s%s\n" % (
         written,
-        ", skipped %d duplicate timestamps" % duplicates if duplicates else ""))
+        ", skipped %d duplicate timestamps" % duplicates if duplicates else "",
+        ", %d outside the window" % outside if outside else ""))
+
+    if hours:
+        sys.stderr.write("bars by hour:\n")
+        for hour in sorted(hours):
+            sys.stderr.write("  %02d:00  %6d\n" % (hour, hours[hour]))
+
+        # The check this flag exists for. Regular hours are 09:30-16:00, so anything
+        # before 09:00 or from 16:00 on is extended-hours data.
+        extended = sum(n for hour, n in hours.items() if hour < 9 or hour >= 16)
+        if extended == 0:
+            sys.stderr.write(
+                "  NOTE: nothing outside 09:00-16:00. This file is regular hours "
+                "only -\n        the source ignored the extended-hours request, or "
+                "was never asked.\n")
 
     if written == 0:
         sys.stderr.write("error: no rows converted\n")
