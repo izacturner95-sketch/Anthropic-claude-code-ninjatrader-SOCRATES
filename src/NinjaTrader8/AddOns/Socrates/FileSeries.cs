@@ -324,8 +324,10 @@ namespace Socrates.Data
 		}
 
 		/// <summary>
-		/// The timestamp may be epoch seconds, epoch milliseconds, or a date-time string.
-		/// A string carrying an explicit zone is honoured; one without is read as UTC.
+		/// The timestamp may be epoch seconds, epoch milliseconds, NinjaTrader's own
+		/// "yyyyMMdd HHmmss", or a general date-time string. A string carrying an explicit
+		/// zone is honoured; one without is read as UTC. NinjaTrader's format is the one
+		/// exception - it is exchange local time by definition and is not converted.
 		///
 		/// That last rule is a stated contract rather than a guess, and the startup banner
 		/// prints the first row's time beside the chart's first bar so a mismatch is one
@@ -390,6 +392,25 @@ namespace Socrates.Data
 					: new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(epoch);
 
 				local = ToPlatformTime(utc);
+				return true;
+			}
+
+			// NinjaTrader's own import format, which is what tools/to_ninjatrader_csv.py
+			// emits. It is already in exchange local time - converting it as if it were UTC
+			// would move every row by the machine's offset, which is the exact failure this
+			// class spends so much output warning about. So it is matched explicitly and
+			// left alone.
+			DateTime exact;
+
+			if (DateTime.TryParseExact(raw, "yyyyMMdd HHmmss", CultureInfo.InvariantCulture,
+					DateTimeStyles.None, out exact)
+				|| DateTime.TryParseExact(raw, "yyyyMMdd", CultureInfo.InvariantCulture,
+					DateTimeStyles.None, out exact))
+			{
+				local = settings.TimestampOffsetMinutes != 0
+					? exact.AddMinutes(settings.TimestampOffsetMinutes)
+					: exact;
+
 				return true;
 			}
 

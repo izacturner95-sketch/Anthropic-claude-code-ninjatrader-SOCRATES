@@ -295,8 +295,19 @@ timestamp,open,high,low,close
 `timestamp,close` alone is accepted for a source that only publishes a level. You lose
 the ATR scaling in step 5's threshold and nothing else. Extra trailing columns are ignored.
 
-**Timestamps** may be epoch seconds, epoch milliseconds, or a date-time string. A string
-carrying a zone is honoured; one without is read as **UTC**.
+**Timestamps** may be:
+
+| Form | Example | Read as |
+|---|---|---|
+| NinjaTrader import format | `20260817 093500` | exchange local time, unconverted |
+| Epoch seconds or milliseconds | `1755604500` | UTC |
+| Date-time with a zone | `2026-08-17T13:35:00Z` | that zone |
+| Date-time without a zone | `2026-08-17 13:35:00` | UTC |
+
+The first row is the important one: `tools/to_ninjatrader_csv.py` already emits exactly
+that, so its output can be pointed at directly without a second conversion — and because
+that format is exchange local time by definition, it is deliberately *not* shifted.
+Everything else is converted from UTC to the machine's local time.
 
 ### Checking it worked
 
