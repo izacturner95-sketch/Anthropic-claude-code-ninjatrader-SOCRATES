@@ -6,11 +6,11 @@ A liquidity sweep is detected against a book of reference levels, confirmed by a
 market structure shift, entered on the retest, and gated on the VIX moving inversely
 and the Magnificent 7 participating in the same direction.
 
-**Status: compiles, backtests, and has run on a sim account.** Measured results over
-several windows sit around a 1.4–1.7 profit factor on 40–75 trade samples; a much better
-looking twelve-day run exists and is not evidence of anything. Steps 5 and 6 cannot be
-backtested over a useful range on a NinjaTrader feed — see `docs/SETUP.md` section 9 —
-so both remain unproven. No claim is made that any of it is profitable.
+**Status: compiles, backtests, and has run on a sim account.** Over two months and 46–80
+trades the profit factor runs 1.71 without confirmations, 1.96 with step 5, and 2.17 with
+both — see `docs/MEASUREMENTS.md`, which also records what was tested and rejected. All of
+it is in-sample, the sample is two months, and the best configuration reads files rather
+than a live feed. No claim is made that any of it is profitable.
 
 ## The six steps
 
@@ -73,14 +73,19 @@ src/NinjaTrader8/
     Confirmations.cs       VIX and Magnificent 7 gates
     RiskManager.cs         Session windows, daily loss limits, halts
     PositionSizer.cs       Fixed contract sizing under a ceiling
+    RelativeStrength.cs    Step 6's second form: index spread instead of a leader count
+    FileSeries.cs          Timestamped values from a file, for steps 5 and 6
     Signal.cs              Shared trade direction type
 src/TradingView/
   SocratesNQ.pine          Pine Script v6 port of the same six steps
 docs/
   MECHANIZATION.md         How the written rules became arithmetic
+  MEASUREMENTS.md          What has actually been measured, with sample sizes
   STRATEGY_SPEC.md         Template for defining trade logic
   SETUP.md                 Installing and running it in NinjaTrader
 tools/
+  fetch_market_data.py     Download VIX and leader bars ready for the strategy to read
+  fetch_market_data.bat    Windows double-click launcher for the above
   to_ninjatrader_csv.py    Convert OHLCV exports into NinjaTrader import format
 ```
 
