@@ -75,6 +75,41 @@ between the two forms, and it is still one run and twelve trades.
 
 ---
 
+## When it trades, and whether the fills are believable
+
+Split from a single run at the best configuration — step 5 on `VX 08-26`, reversals only:
+
+| | Trades | Profit factor | Per trade |
+|---|---|---|---|
+| Cash session 09:30–16:00 | 3 | — | −$952 |
+| Overnight | 47 | 2.33 | $548 |
+
+**Ignore the cash number** — three trades says nothing about whether the cash session
+works. **Read the split.** Overnight is about 70% of the bars on a Globex chart and
+supplies 94% of the trades, so this is an overnight strategy and always has been. Nothing
+was measuring it. The sweep-and-reclaim sequence completes far more often in quiet
+conditions; in the cash session, faster directional moves invalidate setups before they
+retest.
+
+That makes fill realism the first thing to check rather than a footnote, because the
+strategy trades where the book is thinnest.
+
+| Slippage | Trades | Profit factor | Net | Drawdown |
+|---|---|---|---|---|
+| 1 tick | 50 | 2.03 | $22,915 | $3,810 |
+| 2 ticks | 50 | 1.98 | $22,225 | $3,930 |
+
+**Doubling the slippage assumption costs 2.5% of profit factor** — $690 across 50 trades,
+about $14 each, which is roughly one extra tick on an entry plus a stop exit. It degrades
+linearly and predictably. The edge has margin over its execution assumptions.
+
+Two things this does not cover. Prop firms commonly restrict overnight positions and
+charge several times the day margin, which is a rule question rather than a measurement
+one. And a strategy that only trades when the market is quiet is exposed to that
+regime ending.
+
+---
+
 ## Continuations
 
 Measured four times, in four configurations, and negative or marginal in all of them.
