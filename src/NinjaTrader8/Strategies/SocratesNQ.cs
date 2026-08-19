@@ -197,6 +197,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// profitable while one of its two setup types loses money, and blending them hides
 		// exactly that. 56 of 82 entries being continuations makes the split the difference
 		// between measuring the strategy and measuring an average of two strategies.
+		// Results split by when the trade was taken. The strategy runs the full Globex
+		// session, and whether the overnight half earns its keep is a structural question -
+		// not a parameter to sweep. Answering it by running the strategy twice conflates it
+		// with everything else that differs between two runs; splitting the same run does
+		// not. The summary's own note about "the cost of holding through thin hours" was a
+		// hypothesis nothing was testing.
+		private readonly List<bool> pendingWasCash = new List<bool>();
+		private int cashTrades, cashWon;
+		private double cashGrossProfit, cashGrossLoss;
+		private int nightTrades, nightWon;
+		private double nightGrossProfit, nightGrossLoss;
+
 		private readonly List<bool> pendingIsContinuation = new List<bool>();
 		private int revTrades, revWon;
 		private double revGrossProfit, revGrossLoss;
@@ -1673,6 +1685,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// taken. One position at a time and one entry per direction, so pairing the
 			// oldest unmatched entry with the next closed trade holds.
 			pendingRiskDollars.Add(stopDistanceTicks * TickValueDollars * contracts);
+			// The cash session by the clock, not by the platform's session template, so the
+			// split means the same thing whatever template the chart is on.
+			int entryTime = ToTime(Time[0]);
+			pendingWasCash.Add(entryTime >= 93000 && entryTime <= 160000);
+
 			pendingIsContinuation.Add(result.IsContinuation);
 			pendingVixVeto.Add(shadowVixVetoed);
 			pendingBreadthVeto.Add(shadowBreadthVetoed);
@@ -2093,6 +2110,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 			vixUpdatesApplied = 0;
 
 			pendingRiskDollars.Clear();
+			pendingWasCash.Clear();
+			cashTrades = cashWon = nightTrades = nightWon = 0;
+			cashGrossProfit = cashGrossLoss = nightGrossProfit = nightGrossLoss = 0;
+
 			pendingIsContinuation.Clear();
 			revTrades = revWon = contTrades = contWon = 0;
 			revGrossProfit = revGrossLoss = contGrossProfit = contGrossLoss = 0;
@@ -2668,6 +2689,41 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double riskDollars = pendingRiskDollars[0];
 			pendingRiskDollars.RemoveAt(0);
 
+			if (pendingWasCash.Count > 0)
+			{
+				bool wasCash = pendingWasCash[0];
+				pendingWasCash.RemoveAt(0);
+
+				if (wasCash)
+				{
+					cashTrades++;
+
+					if (profitDollars > 0)
+					{
+						cashWon++;
+						cashGrossProfit += profitDollars;
+					}
+					else
+					{
+						cashGrossLoss += -profitDollars;
+					}
+				}
+				else
+				{
+					nightTrades++;
+
+					if (profitDollars > 0)
+					{
+						nightWon++;
+						nightGrossProfit += profitDollars;
+					}
+					else
+					{
+						nightGrossLoss += -profitDollars;
+					}
+				}
+			}
+
 			if (pendingIsContinuation.Count > 0)
 			{
 				bool wasContinuation = pendingIsContinuation[0];
@@ -2882,6 +2938,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			LogKindVerdict();
+			LogSessionVerdict();
 			LogFileVerdict();
 			LogShadowVerdict();
 
@@ -2924,6 +2981,38 @@ namespace NinjaTrader.NinjaScript.Strategies
 					Print("  Both kinds are paying. The mix is a preference, not a correction.");
 				else
 					Print("  Neither kind is paying. The problem is upstream of the mix.");
+			}
+		}
+
+		/// <summary>
+		/// Cash session against overnight, priced separately.
+		///
+		/// Trading hours is not a parameter to sweep - it is a question about whether the
+		/// overnight half of the Globex session is worth holding through, and running the
+		/// strategy twice to find out changes the sample as well as the setting. This
+		/// splits one run, so the two halves are measured on the same trades that actually
+		/// happened.
+		/// </summary>
+		private void LogSessionVerdict()
+		{
+			if (cashTrades + nightTrades == 0)
+				return;
+
+			Print("  --- by session ---");
+			PrintKind("Cash 09:30-16:00", cashTrades, cashWon, cashGrossProfit, cashGrossLoss);
+			PrintKind("Overnight", nightTrades, nightWon, nightGrossProfit, nightGrossLoss);
+
+			if (cashTrades > 0 && nightTrades > 0)
+			{
+				double cashPer = (cashGrossProfit - cashGrossLoss) / cashTrades;
+				double nightPer = (nightGrossProfit - nightGrossLoss) / nightTrades;
+
+				Print(string.Format("  Per trade       : cash {0:C0}, overnight {1:C0}.", cashPer, nightPer));
+
+				if (nightPer <= 0 && cashPer > 0)
+					Print("  The overnight half is not paying. Try Trading hours on Regular.");
+				else if (cashPer <= 0 && nightPer > 0)
+					Print("  The cash session is not paying; the overnight half is carrying this.");
 			}
 		}
 
