@@ -56,36 +56,6 @@ stacking a duplicate. Twelve stay active at most.
 Order blocks are detected on NQ only. The VIX uses pivots and swing levels, since
 "reacting from an important technical level" there does not need candle-level structure.
 
-### Step 6 in its second form: relative strength
-
-The leader count measured well and cannot be traded on this platform. It needs equity
-data the feed does not carry, so it only exists through files, and a file is a snapshot —
-which means the configuration worth trading is not the configuration that can trade.
-
-`Breadth source: RelativeStrength` asks the same question of instruments the feed does
-have. The Nasdaq-100 is roughly half Magnificent 7 by weight; the S&P 500 is not. So the
-difference between their percent moves over the same lookback is a continuous,
-market-cap-weighted reading of whether big tech is leading the market or lagging it —
-which is what "are the leaders participating" was asking, priced rather than counted.
-
-Percent, not points. NQ trades near 23,000 and ES near 6,400, so a spread in points would
-be almost entirely NQ's own move and would say nothing about leadership.
-
-The threshold scales to the spread's own recent average size, with an absolute floor, for
-the reason step 5's does: the two indices diverge far more in a volatile session than a
-quiet one, and a fixed number reachable at midday is impossible at 3am.
-
-**It is not the same test, and the difference is not subtle.** With NQ down 0.2% and ES
-down 0.5%, tech is outperforming — relative strength confirms a long, and the leader
-count, seeing nothing up, refuses it. They disagree in exactly the conditions where a
-confirmation matters most. Which is right is an empirical question, which is why this is
-a mode and not a replacement.
-
-**Nothing the leader count measured transfers to it.** Steps 5 and 6 together were worth
-19% of net and 56% of drawdown over 46 trades — that was earned by the leader form on
-file data. Relative strength is a new filter motivated by the same idea and has to prove
-itself against that benchmark on its own.
-
 | Decision I made | Parameter | Needs your sign-off |
 |---|---|---|
 | Order block = last opposing candle before displacement | `Use order blocks` | |
@@ -405,12 +375,46 @@ second case is a feed or symbol problem, and quietly disabling a confirmation be
 of it would be exactly the kind of silent failure the rest of this file exists to
 prevent, so it still fails loudly.
 
+### Step 6 in its second form: relative strength
+
+The leader count measured well and cannot be traded on this platform. It needs equity
+data the feed does not carry, so it only exists through files, and a file is a snapshot —
+which means the configuration worth trading is not the configuration that can trade.
+
+`Breadth source: RelativeStrength` asks the same question of instruments the feed does
+have. The Nasdaq-100 is roughly half Magnificent 7 by weight; the S&P 500 is not. So the
+difference between their percent moves over the same lookback is a continuous,
+market-cap-weighted reading of whether big tech is leading the market or lagging it —
+which is what "are the leaders participating" was asking, priced rather than counted.
+
+Percent, not points. NQ trades near 23,000 and ES near 6,400, so a spread in points would
+be almost entirely NQ's own move and would say nothing about leadership.
+
+The threshold scales to the spread's own recent average size, with an absolute floor, for
+the reason step 5's does: the two indices diverge far more in a volatile session than a
+quiet one, and a fixed number reachable at midday is impossible at 3am.
+
+**It is not the same test, and the difference is not subtle.** With NQ down 0.2% and ES
+down 0.5%, tech is outperforming — relative strength confirms a long, and the leader
+count, seeing nothing up, refuses it. They disagree in exactly the conditions where a
+confirmation matters most. Which is right is an empirical question, which is why this is
+a mode and not a replacement.
+
+**Nothing the leader count measured transfers to it.** Steps 5 and 6 together were worth
+19% of net and 56% of drawdown over 46 trades — that was earned by the leader form on
+file data. Relative strength is a new filter motivated by the same idea and has to prove
+itself against that benchmark on its own.
+
 | Decision I made | Parameter | Needs your sign-off |
 |---|---|---|
 | Participation = above/below **session open** | — | Or would you rather use above VWAP, or momentum over N bars? |
 | 5 of 7 required | `Min leaders aligned` | |
 | Symbol list is editable text | `Leader symbols` | Add or drop names freely |
 | Step skipped outside 09:30–16:00 ET | `Leaders open` / `Leaders close` | Set them equal to apply the step around the clock, which on a Globex chart means refusing every overnight setup. |
+| Leader count, not relative strength | `Breadth source` | The count is what has been measured; relative strength is what can be traded live |
+| Compared against ES | `Comparison symbol` | Any broader index the feed carries |
+| Spread measured over 12 bars | `Relative strength lookback (bars)` | An hour on a 5-minute chart |
+| Threshold = 0.75 × the spread's own average | `Min spread (multiple)` | Higher is more selective; the floor catches a dead-flat reading |
 
 ---
 
