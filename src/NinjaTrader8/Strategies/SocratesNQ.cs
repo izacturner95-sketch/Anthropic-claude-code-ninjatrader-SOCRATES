@@ -62,6 +62,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// not added at all, which is the point: a multi-series backtest cannot begin before
 		// its youngest series, and that is what has truncated every step 5 and 6 run to the
 		// life of the current contract.
+		// Step 6's alternative form. One series instead of seven files, on the feed rather
+		// than on disk, so it behaves the same in a backtest and live.
+		private RelativeStrengthConfirmation relStrength;
+		private int idxRelStrength = -1;
+
 		private FileSeries vixFile;
 		private FileSeries[] leaderFiles = new FileSeries[0];
 		private bool filesActive;
@@ -485,6 +490,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// "current" legitimately means several minutes old.
 				BreadthMaxDataAgeMinutes = 0;
 
+				// Leaders by default, which is what has been measured. RelativeStrength is
+				// the same question asked of instruments the feed actually carries, and is
+				// unmeasured - see the note on the parameter.
+				BreadthSource = BreadthSourceMode.Leaders;
+				RelativeStrengthSymbol = "ES";
+				RelativeStrengthLookback = 12;
+				RelativeStrengthMinSpread = 0.02;
+				RelativeStrengthMultiple = 0.75;
+
 				ShowChartVisuals = true;
 				ShowSetupZones = true;
 				ShowStatsPanel = true;
@@ -576,6 +590,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				leaderFiles = new FileSeries[0];
 				filesActive = false;
 
+				relStrength = null;
+				idxRelStrength = -1;
+
 				idxFill = idxDaily = idxWeekly = idxFourHour = idxVix = idxBreadthStart = -1;
 				breadthSymbols = new string[0];
 				breadthSessionOpen = new double[0];
@@ -661,7 +678,28 @@ namespace NinjaTrader.NinjaScript.Strategies
 					}, new MarketAnalyzer(vixSettings));
 				}
 
-				if (BreadthMode != ConfirmationMode.Off)
+				if (BreadthMode != ConfirmationMode.Off && BreadthSource == BreadthSourceMode.RelativeStrength)
+				{
+					// Added at the primary's own period so the two series step together and a
+					// lookback of N bars means the same span on both. Asking for a fixed
+					// minute period here would silently compare a 12-bar move on one against
+					// a different span on the other.
+					AddDataSeries(RelativeStrengthSymbol, BarsPeriod.BarsPeriodType, BarsPeriod.Value);
+					idxRelStrength = next++;
+
+					relStrength = new RelativeStrengthConfirmation(new RelativeStrengthSettings
+					{
+						Mode = BreadthMode,
+						LookbackBars = RelativeStrengthLookback,
+						MinSpreadPercent = RelativeStrengthMinSpread,
+						MinSpreadMultiple = RelativeStrengthMultiple,
+						MaxDataAgeMinutes = BreadthMaxDataAgeMinutes > 0
+							? BreadthMaxDataAgeMinutes
+							: BreadthBarMinutes * 3,
+						SkipWhenQuiet = true
+					});
+				}
+				else if (BreadthMode != ConfirmationMode.Off)
 				{
 					breadthSymbols = ParseSymbols(BreadthSymbols);
 
@@ -842,6 +880,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (filesActive)
 				PullFiles();
+
+			UpdateRelativeStrength();
 
 			double atr = ATR(AtrPeriod)[0];
 			if (atr <= 0)
@@ -1062,7 +1102,34 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// Step 6, only while the leaders are open. Outside that window there is no data
 			// to be had at any ticker, so the step is skipped rather than failed - a shut
 			// equity market is not evidence against an overnight NQ trade.
-			if (breadth != null && !IsWithinWindow(timeOfDay, BreadthActiveStart, BreadthActiveEnd))
+			// Relative strength replaces the leader count when selected. It carries no
+			// session window: both instruments are futures on the same hours as the one
+			// being traded, so there is no shut market to stand aside for.
+			if (relStrength != null)
+			{
+				ConfirmationResult rsResult = relStrength.Evaluate(result.Direction, Time[0]);
+
+				if (!rsResult.Agrees)
+				{
+					dayRejectedBreadth++;
+					totalRejectedBreadth++;
+
+					if (!ShadowConfirmations)
+					{
+						Log(string.Format("Setup rejected at step 6. {0} | {1}", rsResult.Detail, result.Detail));
+						return;
+					}
+
+					shadowBreadthVetoed = true;
+					Log("Step 6 disagreed but shadow mode is on - taking the trade anyway. " + rsResult.Detail);
+				}
+
+				strength = Math.Min(strength, rsResult.Strength);
+
+				if (VerboseLogging && !shadowBreadthVetoed)
+					Log("Step 6 passed: " + rsResult.Detail);
+			}
+			else if (breadth != null && !IsWithinWindow(timeOfDay, BreadthActiveStart, BreadthActiveEnd))
 			{
 				breadthSkippedClosed++;
 
@@ -1095,6 +1162,40 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			SubmitEntry(result, strength);
+		}
+
+		/// <summary>
+		/// Each index's own percent move over the same lookback, differenced.
+		///
+		/// Percent, not points: NQ trades near 23,000 and ES near 6,400, so a point spread
+		/// would be almost entirely NQ's move and would say nothing about leadership. Fed
+		/// from the primary bar rather than a BarsInProgress branch, because it needs both
+		/// series aligned at the same instant and only the primary's close defines that.
+		/// </summary>
+		private void UpdateRelativeStrength()
+		{
+			if (relStrength == null || idxRelStrength < 0)
+				return;
+
+			int lookback = Math.Max(1, RelativeStrengthLookback);
+
+			if (CurrentBar < lookback || CurrentBars[idxRelStrength] < lookback)
+				return;
+
+			double leadNow = Close[0];
+			double leadThen = Close[lookback];
+			double baseNow = Closes[idxRelStrength][0];
+			double baseThen = Closes[idxRelStrength][lookback];
+
+			if (leadThen <= 0 || baseThen <= 0)
+				return;
+
+			double leadPercent = ((leadNow - leadThen) / leadThen) * 100.0;
+			double basePercent = ((baseNow - baseThen) / baseThen) * 100.0;
+
+			// The comparison series' own timestamp, so a series that has stopped printing
+			// is seen as stale rather than silently carried forward at the chart's clock.
+			relStrength.Update(Times[idxRelStrength][0], leadPercent, basePercent);
 		}
 
 		#region File-backed sources
@@ -2502,6 +2603,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (index == idxVix)
 				return "VIX " + VixSymbol;
 
+			if (index == idxRelStrength)
+				return "comparison " + RelativeStrengthSymbol;
+
 			if (idxBreadthStart >= 0 && index >= idxBreadthStart && index < idxBreadthStart + breadthSymbols.Length)
 				return "leader " + breadthSymbols[index - idxBreadthStart];
 
@@ -3147,34 +3251,73 @@ namespace NinjaTrader.NinjaScript.Strategies
 					Print("            outside the cash session, so overnight it mostly has nothing to say.");
 				}
 			}
-			Print(string.Format("  Step 6 (leaders)     : {0}{1}", totalRejectedBreadth,
-				breadthSkippedClosed > 0 ? string.Format("   ({0} skipped, leaders closed)", breadthSkippedClosed) : string.Empty));
-
-			// Deliberately not gated on Evaluations: a step that never got as far as counting
-			// leaders reports zero evaluations, which is exactly the case worth printing.
-			// Gating on it hid the no-data run behind silence for two rounds.
-			if (breadth != null && (breadth.Evaluations > 0 || breadth.RejectedNoData > 0 || breadthSkippedClosed > 0))
+			// Relative strength reports on its own terms. Reusing the leader wording - how
+			// many of seven agreed - would describe a test that is not running.
+			if (relStrength != null)
 			{
-				Print(string.Format("      evaluated {0}, confirmed {1}, not aligned {2}, no data {3}",
-					breadth.Evaluations, breadth.Confirmed, breadth.RejectedNotAligned, breadth.RejectedNoData));
+				Print(string.Format("  Step 6 (rel strength): {0}{1}", totalRejectedBreadth,
+					relStrength.SkippedQuiet > 0
+						? string.Format("   ({0} skipped, comparison quiet)", relStrength.SkippedQuiet)
+						: string.Empty));
 
-				if (breadth.Evaluations > 0)
+				Print(string.Format("      {0} vs {1} over {2} bars: no data {3}, direction {4}, confirmed {5}",
+					Instrument != null ? Instrument.MasterInstrument.Name : "primary",
+					RelativeStrengthSymbol, RelativeStrengthLookback,
+					relStrength.RejectedNoData, relStrength.RejectedDirection, relStrength.Confirmed));
+
+				if (relStrength.Samples > 0)
 				{
-					Print(string.Format("      leaders agreeing: mean {0:N1} of {1:N1} available, needed {2:N1}",
-						breadth.MeanAligned, breadth.MeanAvailable, breadth.MeanRequired));
+					Print(string.Format("      |spread| : min {0:N3}%, mean {1:N3}%, max {2:N3}%",
+						relStrength.SpreadAbsMin, relStrength.SpreadAbsMean, relStrength.SpreadAbsMax));
+					Print(string.Format("      threshold: min {0:N3}%, mean {1:N3}%, max {2:N3}%",
+						relStrength.ThresholdMin, relStrength.ThresholdMean, relStrength.ThresholdMax));
 
-					// A gate that never passes anything it looks at is set beyond what the
-					// data does, not a selective one.
-					if (breadth.Confirmed == 0)
-						Print("      NOTE: nothing it evaluated ever passed. Lower 'Min leaders aligned' before reading anything into this.");
+					// The two ways a self-scaling threshold goes wrong, and neither is
+					// visible from a rejection count alone.
+					if (relStrength.SpreadAbsMax < relStrength.ThresholdMin)
+						Print("      NOTE: the threshold is above every spread measured. Lower 'Min spread (multiple)'.");
+					else if (relStrength.ThresholdMax <= RelativeStrengthMinSpread)
+						Print(string.Format("      NOTE: the scaling term never bound - the {0:N3}% floor was the whole test.",
+							RelativeStrengthMinSpread));
 				}
-
-				if (breadth.RejectedNoData > 0)
+				else if (relStrength.RejectedNoData > 0)
 				{
-					Print(string.Format("      NOTE: {0} setups were refused because not one leader had produced a bar.", breadth.RejectedNoData));
-					LogBreadthSeriesCounts();
+					Print(string.Format("      NOTE: '{0}' produced no usable bars. Open it on a chart at this period.",
+						RelativeStrengthSymbol));
 				}
 			}
+			else
+			{
+				Print(string.Format("  Step 6 (leaders)     : {0}{1}", totalRejectedBreadth,
+					breadthSkippedClosed > 0 ? string.Format("   ({0} skipped, leaders closed)", breadthSkippedClosed) : string.Empty));
+
+				// Deliberately not gated on Evaluations: a step that never got as far as counting
+				// leaders reports zero evaluations, which is exactly the case worth printing.
+				// Gating on it hid the no-data run behind silence for two rounds.
+				if (breadth != null && (breadth.Evaluations > 0 || breadth.RejectedNoData > 0 || breadthSkippedClosed > 0))
+				{
+					Print(string.Format("      evaluated {0}, confirmed {1}, not aligned {2}, no data {3}",
+						breadth.Evaluations, breadth.Confirmed, breadth.RejectedNotAligned, breadth.RejectedNoData));
+
+					if (breadth.Evaluations > 0)
+					{
+						Print(string.Format("      leaders agreeing: mean {0:N1} of {1:N1} available, needed {2:N1}",
+							breadth.MeanAligned, breadth.MeanAvailable, breadth.MeanRequired));
+
+						// A gate that never passes anything it looks at is set beyond what the
+						// data does, not a selective one.
+						if (breadth.Confirmed == 0)
+							Print("      NOTE: nothing it evaluated ever passed. Lower 'Min leaders aligned' before reading anything into this.");
+					}
+
+					if (breadth.RejectedNoData > 0)
+					{
+						Print(string.Format("      NOTE: {0} setups were refused because not one leader had produced a bar.", breadth.RejectedNoData));
+						LogBreadthSeriesCounts();
+					}
+				}
+			}
+
 			Print(string.Format("  Stop band            : {0}", totalRejectedStop));
 			Print(string.Format("  Sizing               : {0}", totalRejectedSizing));
 			Print(string.Format("  Daily risk budget    : {0}", totalRejectedRiskBudget));
@@ -3546,6 +3689,29 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[NinjaScriptProperty]
 		[Display(Name = "Breadth mode", GroupName = "8. Step 6 - Leaders", Order = 0)]
 		public ConfirmationMode BreadthMode { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Breadth source", Description = "Leaders counts the named symbols individually - the measured form, but it needs equity data this feed does not carry, so in practice it needs files and files are snapshots. RelativeStrength reads the spread between the traded index and a broader one instead: the Nasdaq-100 is roughly half Magnificent 7 by weight and the S&P 500 is not, so the difference in their moves is a continuous reading of whether big tech is leading. Both are futures on this feed, so it behaves identically in a backtest and live - but it is a different test and has not been measured. In a falling market they disagree: NQ down less than ES is leadership to one and no participation to the other.", GroupName = "8. Step 6 - Leaders", Order = 1)]
+		public BreadthSourceMode BreadthSource { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Comparison symbol", Description = "The broader index the traded one is measured against. Only used when Breadth source is RelativeStrength. Loaded at the chart's own bar period so both series step together.", GroupName = "8. Step 6 - Leaders", Order = 9)]
+		public string RelativeStrengthSymbol { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(1, 500)]
+		[Display(Name = "Relative strength lookback (bars)", Description = "Bars over which each index's percent move is measured before differencing them.", GroupName = "8. Step 6 - Leaders", Order = 10)]
+		public int RelativeStrengthLookback { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 10)]
+		[Display(Name = "Min spread (%, floor)", Description = "Absolute floor on the spread in percentage points. Kept low - it rejects a dead-flat reading rather than being the real test.", GroupName = "8. Step 6 - Leaders", Order = 11)]
+		public double RelativeStrengthMinSpread { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 10)]
+		[Display(Name = "Min spread (multiple)", Description = "The real threshold: this fraction of the spread's own recent average size. The two indices diverge far more in a volatile session than a quiet one, so a fixed number is reachable at midday and impossible at 3am - the failure step 5's fixed threshold had.", GroupName = "8. Step 6 - Leaders", Order = 12)]
+		public double RelativeStrengthMultiple { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Leader symbols", Description = "Comma separated. CME single stock futures - SAAPL, SMSFT and so on - not the cash shares, which this feed does not carry. Each must open on a chart or the strategy will not start at all. History is contract-based and short, so a backtest with this step on truncates to the youngest of them.", GroupName = "8. Step 6 - Leaders", Order = 1)]
