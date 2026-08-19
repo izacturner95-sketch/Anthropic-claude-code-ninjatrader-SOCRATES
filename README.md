@@ -6,11 +6,11 @@ A liquidity sweep is detected against a book of reference levels, confirmed by a
 market structure shift, entered on the retest, and gated on the VIX moving inversely
 and the Magnificent 7 participating in the same direction.
 
-**Status: compiles, backtests, and has run on a sim account.** Over two months and 46–80
-trades the profit factor runs 1.71 without confirmations, 1.96 with step 5, and 2.17 with
-both — see `docs/MEASUREMENTS.md`, which also records what was tested and rejected. All of
-it is in-sample, the sample is two months, and the best configuration reads files rather
-than a live feed. No claim is made that any of it is profitable.
+**Status: compiles, backtests, and has run on a sim account.** Over two months and 50–80
+trades the profit factor runs 1.71 with no confirmations and 2.03 with step 5 reading VIX
+futures — a platform-only configuration that needs no files. See `docs/MEASUREMENTS.md`,
+which records the controlled comparison and what was tested and rejected. All of it is
+in-sample and the sample is two months. No claim is made that any of it is profitable.
 
 ## The six steps
 

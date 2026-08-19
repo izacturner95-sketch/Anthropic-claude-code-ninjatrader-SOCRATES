@@ -20,12 +20,29 @@ match to within one setup.
 | Configuration | Trades | Profit factor | Drawdown | Per trade | Return/DD |
 |---|---|---|---|---|---|
 | No confirmations | 80 | 1.71 | $6,887 | $324 | 3.8 |
-| Step 5 only | 55 | 1.96 | $4,830 | $423 | 4.8 |
-| Step 5 + relative strength | 45 | 1.75 | $4,830 | $357 | 3.3 |
-| **Step 5 + leaders** | **46** | **2.17** | **$3,021** | **$455** | **6.9** |
+| Step 5 from `VIX.csv` | 55 | 1.96 | $4,830 | $423 | 4.8 |
+| Step 5 from `VIX.csv` + relative strength | 45 | 1.75 | $4,830 | $357 | 3.3 |
+| **Step 5 from `VX 08-26`** | **50** | **2.03** | **$3,810** | **$458** | **6.0** |
+| **Step 5 from `VIX.csv` + leaders** | **46** | **2.17** | **$3,021** | **$455** | **6.9** |
 
 **Step 5 is worth having.** Alone it lifts profit factor from 1.71 to 1.96 and removes 30%
 of the drawdown.
+
+**And the futures beat the index at it.** `VX 08-26` outperformed the `^VIX` file on every
+measure — 2.03 against 1.96, $3,810 of drawdown against $4,830, $458 per trade against
+$423 — while being a platform series that needs no files at all.
+
+The reason is in the skip counts: the file was stood aside on **52** setups, the futures on
+**3**. `^VIX` is disseminated for about thirteen hours a day, so on a Globex chart it has
+nothing to say overnight and those setups passed through unfiltered. VX trades nearly
+23 hours, so it actually applies the test where the index could not. More coverage, not a
+better signal — but the effect is the same and it is the tradeable one.
+
+Two caveats on that number. `VX 08-26` was the *second* month for the first five weeks of
+the window and only became front around 22 July, so the early data is thinner than live
+trading would see; if anything that understates it. And live means `VX ##-##`, which rolls
+monthly — the contract switch puts a discontinuity in the series, so expect one unreliable
+reading per roll where a six-bar change is measured across it.
 
 **The leader form of step 6 is worth having.** Added to step 5 it lifts 1.96 to 2.17 and
 removes another 37% of drawdown. The nine trades it refused averaged $256 against a $423
@@ -111,10 +128,11 @@ again.
 alignment count and relative strength's multiple were all chosen while looking at this
 window.
 
-**The best configuration is not tradeable as measured.** Steps 5 and 6 read files, and a
-file is a snapshot. Live, NinjaTrader has no US equity feed at all, and its VIX futures
-history does not survive a contract roll. The live-tradeable configurations are the ones
-with no step 6, and step 5 pointed at something that updates.
+**The best configuration is still not tradeable as measured** — step 6's leader form reads
+files, and a file is a snapshot. But the gap has closed a long way: step 5 on `VX ##-##`
+with step 6 off is a platform-only configuration at 2.03 and $3,810, against 2.17 and
+$3,021 for the file-based best. That is the live candidate, and it costs six percent of
+profit factor rather than the third it would have cost a week ago.
 
 **Two months is two months.** Roughly one trade a day at these settings, in one market
 regime.
