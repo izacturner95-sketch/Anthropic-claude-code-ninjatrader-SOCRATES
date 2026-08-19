@@ -480,6 +480,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				BreadthActiveStart = 0;
 				BreadthActiveEnd = 0;
 
+				// 0 derives it from the bar period, as before. Raise it when the leaders come
+				// from a delayed source - a file refreshed on a timer, or a free feed - where
+				// "current" legitimately means several minutes old.
+				BreadthMaxDataAgeMinutes = 0;
+
 				ShowChartVisuals = true;
 				ShowSetupZones = true;
 				ShowStatsPanel = true;
@@ -712,7 +717,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 							Mode = BreadthMode,
 							MinAligned = BreadthMinAligned,
 							MinMovePercent = BreadthMinMovePercent,
-							MaxDataAgeMinutes = BreadthBarMinutes * 3,
+							// 0 derives it from the bar period. That suits a platform series, which
+							// is either live or absent. It is wrong for a delayed source: a free
+							// equity feed running fifteen minutes behind is fifteen minutes behind
+							// a limit of fifteen minutes, so every reading arrives just as it
+							// expires and the step silently never confirms.
+							MaxDataAgeMinutes = BreadthMaxDataAgeMinutes > 0
+								? BreadthMaxDataAgeMinutes
+								: BreadthBarMinutes * 3,
 							SkipWhenClosed = true
 						}, breadthSymbols);
 					}
@@ -3553,6 +3565,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, 100)]
 		[Display(Name = "Min leader move (%)", Description = "Below this a leader counts as flat rather than participating.", GroupName = "8. Step 6 - Leaders", Order = 4)]
 		public double BreadthMinMovePercent { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 1440)]
+		[Display(Name = "Leader max data age (minutes)", Description = "How stale a leader reading may be and still count. 0 derives it from the bar period, which suits a platform series - either live or absent. A delayed source needs its own number: a free equity feed fifteen minutes behind a fifteen-minute limit expires exactly as it arrives, and the step then never confirms without ever saying why.", GroupName = "8. Step 6 - Leaders", Order = 8)]
+		public int BreadthMaxDataAgeMinutes { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, 235959)]
