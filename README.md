@@ -6,11 +6,12 @@ A liquidity sweep is detected against a book of reference levels, confirmed by a
 market structure shift, entered on the retest, and gated on the VIX moving inversely
 and the Magnificent 7 participating in the same direction.
 
-**Status: compiles, backtests, and has run on a sim account.** Over two months and 50–80
-trades the profit factor runs 1.71 with no confirmations and 2.03 with step 5 reading VIX
-futures — a platform-only configuration that needs no files. See `docs/MEASUREMENTS.md`,
-which records the controlled comparison and what was tested and rejected. All of it is
-in-sample and the sample is two months. No claim is made that any of it is profitable.
+**Status: compiles, backtests, and has run on a sim account.** The tuned configuration
+reaches a 2.77 profit factor over 35 trades on the window it was tuned on, and 2.65 over
+12 trades on a three-month window it was not — where a single trade supplies most of the
+profit and the trade rate falls from seventeen a month to four. Not disconfirmed, not
+confirmed. `docs/MEASUREMENTS.md` records every run, including what was tested and
+rejected. No claim is made that any of it is profitable.
 
 ## The six steps
 

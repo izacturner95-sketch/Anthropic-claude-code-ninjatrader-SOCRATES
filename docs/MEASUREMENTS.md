@@ -116,6 +116,44 @@ regime ending.
 
 ---
 
+## The one out-of-sample test
+
+Everything above was measured on 2026-06-17 to 2026-08-18, which is also the window every
+parameter was chosen on. This is the same configuration — step 5 on VX, reversals only,
+200-tick stop band, 3 ticks of slippage — run on **2026-03-13 to 2026-06-18**, which none
+of it was tuned on.
+
+| | Tuned window | Out of sample |
+|---|---|---|
+| Trades | 35 in 2 months | **12 in 3 months** |
+| Rate | ~17 a month | **~4 a month** |
+| Profit factor | 2.77 | 2.65 |
+| Drawdown | $3,165 | $2,285 |
+| Win rate | 51% | **33%** |
+| Structure shifts discarded as too wide | 55 of 397 (14%) | **146 of 263 (55%)** |
+
+**The parameters did not invert**, which is more than most over-fitted sets manage. That
+is the encouraging part and it is the whole of it.
+
+**One trade carries the window.** Best R was +15.97 against risk that ranged $337 to $980,
+so that single trade was worth between $5,400 and $15,000 of a $14,985 gross profit —
+somewhere between a third and all of it. Strip it out and the window is around break-even.
+On twelve trades, a profit factor resting on one outcome is not a measurement.
+
+**The strategy is regime-dependent, and was tuned in a generous regime.** Four trades a
+month against seventeen, and the funnel thinned everywhere: `Max structure distance (ATR)`
+rejected 55% of structure shifts in the earlier window against 14% in the tuned one. The
+geometry this strategy looks for was simply rarer between March and June.
+
+That matters beyond the profit factor. Four trades a month is a different proposition for
+a prop account's activity rules, and for how long you would wait before knowing something
+had broken.
+
+**Verdict: not disconfirmed. Not confirmed either.** The next thing worth doing is more
+history, not more parameters — a year out of sample would settle what three months cannot.
+
+---
+
 ## Continuations
 
 Measured four times, in four configurations, and negative or marginal in all of them.
@@ -141,15 +179,33 @@ Settled. Off.
 
 ## Risk settings
 
-**The stop band is the largest single lever on drawdown.** From the same 195-setup
-distribution:
+**The stop band is the largest single lever on drawdown**, and the relationship is
+monotonic. Swept at the best configuration, 3 ticks of slippage:
 
-| Max stop | Setups kept | Worst loss | Result |
-|---|---|---|---|
-| 400 ticks | 100% | $2,000 | net $31,230, drawdown $8,810 |
-| 250 ticks | 85% | $1,250 | net $20,285, drawdown **$4,370** |
+| Max stop | Trades | Profit factor | Drawdown | Per trade | Return/DD | Max risk |
+|---|---|---|---|---|---|---|
+| **200 ticks** | 35 | **2.77** | **$3,165** | **$578** | **6.4** | $986 |
+| 250 ticks | 50 | 1.98 | $3,930 | $445 | 5.7 | $1,234 |
+| 300 ticks | 58 | 1.85 | $5,545 | $413 | 4.3 | $1,479 |
+| 2.5 ATR, 400 backstop | 59 | 1.76 | $7,655 | $401 | $1,931 |
 
-Net fell by a third and drawdown halved. Return-to-drawdown went from 3.5 to 4.6.
+Profit factor, per-trade, drawdown and return-to-drawdown all move consistently across the
+range. A monotonic gradient is better evidence than a spiky optimum would be, and there is
+a mechanism to go with it: the stop comes from the retest pullback, so a wide stop means
+the retest went a long way against the setup before confirming — a structurally worse
+setup, not merely a larger one. Win rate rises as the band tightens, which a pure risk
+control would not do.
+
+**Normalising it to ATR made it worse, and that is the interesting result.** `Max setup
+risk (ATR)` at 2.5 was tried on the reasoning that a fixed tick count is calibrated to one
+window's volatility and will not travel. It came last: profit factor 1.76 and the worst
+drawdown of the four. An ATR-scaled cap admits large stops *precisely when volatility is
+high*, which is what normalising means, and those trades lost money.
+
+So the fixed cap is doing something the normalised one cannot: it is a volatility filter
+as much as a risk filter, and the strategy is worse in volatile conditions. The tension is
+unresolved — 200 ticks is still a constant fitted to two months, and only out-of-sample
+data can say whether it captures a real property or that window's ATR.
 
 **The consecutive-loss halt costs money and buys drawdown.** Removing it added nine trades
 and $7,190 of net, and $1,630 of drawdown — with the worst trade deteriorating from −1.12R
