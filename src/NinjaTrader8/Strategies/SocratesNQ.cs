@@ -429,7 +429,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// a continuous series, which it can only do with the history and merge policy
 				// to back it, and it returned an empty series here. The bare name resolves
 				// through the instrument list instead.
-				VixSymbol = "VX";
+				// "VX ##-##", not "VX". A bare futures root is not an instrument name in
+				// NinjaTrader and fails at startup with "Unknown instrument" - which stops
+				// the strategy before it prints anything. ##-## is the platform's own
+				// placeholder for the front contract.
+				//
+				// Note what that means for a backtest: the front contract is the one that is
+				// front *now*, so a run over an earlier window gets a contract that barely
+				// existed then. For a historical test, name the contract that was front
+				// during it - VX 08-26 for a June-to-August window.
+				VixSymbol = "VX ##-##";
 				VixBarMinutes = 5;
 				VixLookbackBars = 6;
 				// An absolute floor only. The real test scales to the VIX's own ATR, because
@@ -3645,7 +3654,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public ConfirmationMode VixMode { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "VIX symbol", Description = "VX is the VIX future, which trades nearly 23 hours and so works overnight. VX ##-## asks for a built continuous series and can come back empty. ^VIX is the index, only published around the cash session. Must exist in your feed either way.", GroupName = "7. Step 5 - VIX", Order = 1)]
+		[Display(Name = "VIX symbol", Description = "Needs a contract, not a bare root: 'VX' alone is not an instrument name and fails at startup with Unknown instrument. 'VX ##-##' is the platform's placeholder for the front contract and is right for live. A backtest wants the contract that was front during the window being tested - VX 08-26 for June to August - because the front contract now barely existed then. ^VIX is the index, published only around the cash session, so it is dark for most of a Globex night. Set a merge policy on the instrument for continuity across rolls.", GroupName = "7. Step 5 - VIX", Order = 1)]
 		public string VixSymbol { get; set; }
 
 		[NinjaScriptProperty]
