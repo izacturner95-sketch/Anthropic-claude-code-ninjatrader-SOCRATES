@@ -97,11 +97,17 @@ strategy trades where the book is thinnest.
 | Slippage | Trades | Profit factor | Net | Drawdown |
 |---|---|---|---|---|
 | 1 tick | 50 | 2.03 | $22,915 | $3,810 |
-| 2 ticks | 50 | 1.98 | $22,225 | $3,930 |
+| 3 ticks | 50 | 1.98 | $22,225 | $3,930 |
 
-**Doubling the slippage assumption costs 2.5% of profit factor** — $690 across 50 trades,
-about $14 each, which is roughly one extra tick on an entry plus a stop exit. It degrades
-linearly and predictably. The edge has margin over its execution assumptions.
+**Tripling the slippage assumption costs 2.5% of profit factor** — $690 across 50 trades.
+The mechanics predict $760: two extra ticks is $10 a fill, the 24 winners exit on a limit
+so they pay it once, and the 26 losers pay it on the entry and again on the stop. Coming
+in at $690 against that is the result behaving exactly as it should, with no hidden
+nonlinearity, which matters more than the size of the number.
+
+The edge has real margin over its execution assumptions rather than depending on them.
+That was the open question about a strategy trading 94% of the time in the thinnest hours,
+and it is answered.
 
 Two things this does not cover. Prop firms commonly restrict overnight positions and
 charge several times the day margin, which is a rule question rather than a measurement
