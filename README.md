@@ -29,6 +29,10 @@ whole setup, so "everything must align" is enforced by the code rather than hope
 `docs/MECHANIZATION.md` documents every judgment call made turning the written rules
 into arithmetic, and is the file to read first.
 
+`docs/MEASUREMENTS.md` records what has actually been measured, with sample sizes — the
+controlled comparison of what each confirmation is worth, and the settings that were
+tested and rejected.
+
 ---
 
 ## Contract reference (NQ)
