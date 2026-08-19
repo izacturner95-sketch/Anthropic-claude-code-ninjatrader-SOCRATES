@@ -23,6 +23,7 @@ match to within one setup.
 | Step 5 from `VIX.csv` | 55 | 1.96 | $4,830 | $423 | 4.8 |
 | Step 5 from `VIX.csv` + relative strength | 45 | 1.75 | $4,830 | $357 | 3.3 |
 | **Step 5 from `VX 08-26`** | **50** | **2.03** | **$3,810** | **$458** | **6.0** |
+| Step 5 from `VX 08-26` + relative strength | 45 | 2.13 | $3,495 | $511 | 6.6 |
 | **Step 5 from `VIX.csv` + leaders** | **46** | **2.17** | **$3,021** | **$455** | **6.9** |
 
 **Step 5 is worth having.** Alone it lifts profit factor from 1.71 to 1.96 and removes 30%
@@ -48,15 +49,29 @@ reading per roll where a six-bar change is measured across it.
 removes another 37% of drawdown. The nine trades it refused averaged $256 against a $423
 book average — it is removing below-average trades, which is what a filter is for.
 
-**Relative strength is worse than nothing.** Added to step 5 it drops 1.96 to 1.75 with no
-drawdown benefit. The ten trades it refused averaged **$717** — it removes
-better-than-average trades. It was tested at three thresholds; at 0.75 it passed 25% and
-left too few trades to judge, at 0.40 it passed 85% and barely filtered. Tuning further on
-this one window would be fitting, not measuring.
+**Relative strength is unproven, in both directions.** Two tests, and they disagree:
+
+| Added to | Trades removed | Profit factor | Net effect of the removed trades |
+|---|---|---|---|
+| Step 5 from `VIX.csv` | 10 | 1.96 → 1.75 | −$7,170, i.e. $717 each of *lost* profit |
+| Step 5 from `VX 08-26` | 5 | 2.03 → 2.13 | +$90, i.e. essentially nothing |
+
+On the first of those this file previously said relative strength was worse than nothing.
+That was over-read from a ten-trade difference, and the second test contradicts it. What
+both runs actually support is weaker and duller: **at a threshold low enough to keep a
+usable trade count it removes five to ten trades and the result moves within noise.** It
+has not been shown to help or to hurt.
+
+It was also tested at three thresholds — 0.75 passed 25% and left too few trades to judge,
+0.40 passed 85% and barely filtered. Choosing between them on this one window would be
+fitting rather than measuring.
+
+It ships off because an unproven filter should be off, not because it was shown to fail.
 
 At matched selectivity the comparison is unusually clean: both forms of step 6 rejected
-**exactly twelve** setups from the same pool of eighty, and the leader form's twelve were
-the right twelve. Whatever the Mag 7 count reads, the NQ/ES spread does not read it.
+**exactly twelve** setups from the same pool of eighty, and on that run the leader form's
+twelve were the better twelve to lose. That is the strongest single piece of evidence
+between the two forms, and it is still one run and twelve trades.
 
 ---
 
