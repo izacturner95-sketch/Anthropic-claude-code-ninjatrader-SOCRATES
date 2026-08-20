@@ -110,7 +110,7 @@
       <MinPenetrationAtr>0.05</MinPenetrationAtr>
       <MinPenetrationPoints>5</MinPenetrationPoints>
       <MaxBarsToReclaim>6</MaxBarsToReclaim>
-      <EnableReversals>true</EnableReversals>
+      <EnableReversals>false</EnableReversals>
       <EnableContinuations>true</EnableContinuations>
       <ContinuationsOnMajorLevelsOnly>false</ContinuationsOnMajorLevelsOnly>
       <MaxBarsSweepToShift>45</MaxBarsSweepToShift>

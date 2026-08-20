@@ -277,6 +277,59 @@ exist. Worth checking before reading anything into step 5's cash numbers.
 Perfect stops would give +0.02R against the actual −0.04R. Smaller than overnight, as
 expected in a liquid session, and not the thing standing between this and profit.
 
+### Reversals off: the cash session's first profitable run
+
+Same window, same everything, `Trade reversals` set false.
+
+| | Reversals on | **Reversals off** |
+|---|---|---|
+| Trades | 52 | 54 |
+| Win rate | 35% | 37% |
+| Net | +$290 | **+$5,660** |
+| Profit factor | 1.02 | **1.35** |
+| Per trade | +$5.58 | **+$104.81** |
+| Largest drawdown | $5,455 | **$2,375** |
+| Worst trade | −2.96R | −1.40R |
+| Largest loss | $1,310 | $820 |
+| Average loss | $527.65 | $480.59 |
+| Stops that overran | 6 | 4 |
+
+**The gain is not the subtraction.** Removing four losing trades was worth $1,895, which
+would have given $2,185. The run returned $5,660 — $3,475 more than removing them can
+explain, and the continuation-only profit factor rose from 1.14 to 1.35 on a population of
+the same kind.
+
+Two mechanisms, both structural rather than statistical:
+
+- **Reversals occupied entry slots.** A setup in progress blocks what is behind it, so
+  continuations that would have qualified never got the chance. Completed setups rose from
+  197 to 227 on identical input.
+- **Reversals masked same-bar continuations.** The detector resolves one event per bar, so
+  a reclaim and a break landing together meant the break was discarded. Continuation
+  emissions rose from 4,436 to 5,201 — 765 events that existed all along and were never
+  reported.
+
+The drawdown and tail improvements come free with that: nothing in this run was aimed at
+risk, and the worst trade still halved.
+
+**`Structure shifts: 0` is correct here, not a fault.** A continuation skips step 3 by
+design — the break through the level *is* the structural event, so the engine goes straight
+to the retest. With reversals off nothing takes the step-3 path at all. The consequence
+worth knowing: **`Min displacement (ATR)`, `Max bars sweep to shift` and `Max structure
+distance (ATR)` do nothing in this configuration.** Do not spend runs tuning them.
+
+**Read this at its sample size.** 54 trades, in-sample, one two-month window, one regime.
+1.35 is the first cash number above breakeven, not a validated edge — and it was found by
+looking at this same window, which is how overfitting begins. The out-of-sample question
+is open and it is the one that matters now.
+
+**And 1.35 is not a live number.** Step 6 rejected 66 setups in this run using leader data
+that came from files — cash equity snapshots this feed cannot supply in real time, and
+which the CME single stock futures do not substitute for at usable history. Whatever the
+live configuration turns out to be, it is not this one. The two candidates that survive the
+constraint are step 6 off entirely, and `Breadth source` = RelativeStrength, which reads
+NQ against ES and is futures-only on both sides. Neither has been measured on this session.
+
 ---
 
 ## Risk settings

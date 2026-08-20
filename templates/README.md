@@ -78,12 +78,18 @@ Kept from the overnight configuration, worth knowing you are running:
 
 ## Where this stands
 
-**Breakeven.** The first run of this template over 2026-06-17 to 2026-08-18 returned
-profit factor 1.02, +$290 over 52 trades, $5,455 of drawdown. Four earlier cash runs had
-topped out at 0.59 with what looked like a −0.07R ceiling; that ceiling claim was wrong.
+**Profit factor 1.35**, +$5,660 over 54 trades, $2,375 drawdown, over 2026-06-17 to
+2026-08-18. Four earlier cash runs had topped out at 0.59 with what looked like a −0.07R
+ceiling; that ceiling claim was wrong.
 
-Not tradeable at 1.02 — but no longer a dead line of work either. Full numbers in
-`docs/MEASUREMENTS.md`.
+Two caveats that matter more than the number:
+
+- **54 trades, in-sample.** Found by looking at this window. Not a validated edge.
+- **Not a live configuration.** Step 6 rejected 66 setups here using leader data read from
+  files — cash equity snapshots that cannot be supplied in real time. The live question is
+  still open.
+
+Full numbers in `docs/MEASUREMENTS.md`.
 
 ### Already settled — do not spend runs on these
 
@@ -92,17 +98,23 @@ Not tradeable at 1.02 — but no longer a dead line of work either. Full numbers
 - **Stop overruns.** Six of 52 trades lost more than 1R, worth 0.06R a trade. Real, small,
   and not what stands between this and profit.
 
+- **Reversals.** Off is decisively better here and is now the template default. The gain
+  was structural, not statistical: reversals occupied entry slots and masked same-bar
+  continuations, so removing them surfaced trades that had never been reachable.
+- **`Min displacement (ATR)`, `Max bars sweep to shift`, `Max structure distance (ATR)`.**
+  Inert with reversals off — continuations skip step 3 by design. Tuning them changes
+  nothing.
+
 ### Open, in order of how much they move
 
-1. **Step 5 and step 6, one at a time.** Together they reject 127 of 197 setups here and
-   neither was ever validated on the cash session. Largest untested lever in the run.
-2. **Reversals off.** Four reversal trades lost $1,895 while 48 continuations made $2,185,
-   putting continuations alone at 1.14. Four trades is not a sample, so use the
-   `Trade reversals` switch and measure it rather than subtracting.
-3. **`Max stop (ticks)` below 200.** Half the completed setups implied a stop of 124 ticks
-   or less; the band only rejected 12. The overnight sweep was monotonic toward tighter.
+1. **Making step 6 live.** It rejects 66 setups on file data that does not exist in real
+   time. Run `Breadth mode` = Off and `Breadth source` = RelativeStrength against the
+   current baseline; those are the only two forms that survive without stock data.
+2. **`Max stop (ticks)` below 200.** Half the completed setups implied a stop of 124 ticks
+   or less; the band only rejected 15. The overnight sweep was monotonic toward tighter.
+3. **Out-of-sample.** 1.35 was found by looking at this window. Nothing else settles it.
 
-One thing worth checking before reading step 5's cash numbers at all: 74 setups auto-passed
-it as "source quiet," meaning the VIX file was more than 15 minutes stale during cash
-hours, when the index is live. Either the download has gaps or the age limit is solving an
+One thing worth checking before reading step 5's numbers at all: 81 setups auto-passed it
+as "source quiet," meaning the VIX file was more than 15 minutes stale during cash hours,
+when the index is live. Either the download has gaps or the age limit is solving an
 overnight problem in a session that does not have it.

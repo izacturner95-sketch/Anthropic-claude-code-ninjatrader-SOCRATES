@@ -3495,6 +3495,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (totalSweeps == 0)
 				Print("  No sweeps at all. Loosen 'Min penetration' or check that levels are being built.");
+			else if (totalShifts == 0 && !EnableReversals)
+				Print("  No structure shifts, which is correct with reversals off: a continuation treats the break "
+					+ "itself as the structural event and goes straight to the retest. 'Min displacement (ATR)', "
+					+ "'Max bars sweep to shift' and 'Max structure distance (ATR)' are inert in this configuration.");
 			else if (totalShifts == 0)
 				Print("  Sweeps but no structure shifts. Lower 'Min displacement (ATR)' or raise 'Max bars sweep to shift'.");
 			else if (totalZoneTouches == 0)
