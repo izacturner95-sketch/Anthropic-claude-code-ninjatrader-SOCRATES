@@ -594,12 +594,13 @@ The full configuration is committed as `templates/SocratesNQ - Cash session.xml`
 Each row is a single parameter moved back to its old value against the same baseline, same
 window. The baseline is `Min reward:risk` 1.2, level merge 0.45, everything else as shipped.
 
-| Parameter | Baseline | Reverted to | Sweeps | Trades | Profit factor | Net |
-|---|---|---|---|---|---|---|
-| — (baseline) | | | 14,736 | 134 | **1.86** | +$39,950 |
-| `Min reward:risk` | 1.2 | 1.0 / 0.8 / 0.6 | 14,730 | 135–140 | 1.93 / 1.84 / 1.83 | flat |
-| `Level merge (ATR)` | 0.45 | 0.15 | 14,730 | 135 | 1.85 | +$40,055 |
-| **`Swing strength`** | **4** | **6** | 14,705 | 125 | **1.68** | **+$32,275** |
+| Parameter | Baseline | Reverted to | Sweeps | Trades | Profit factor | Net | Worst trade |
+|---|---|---|---|---|---|---|---|
+| — (baseline) | | | 14,736 | 134 | **1.86** | +$39,950 | −2.75R / $1,315 |
+| `Min reward:risk` | 1.2 | 1.0 / 0.8 / 0.6 | 14,730 | 135–140 | 1.93 / 1.84 / 1.83 | flat | −2.75R |
+| `Level merge (ATR)` | 0.45 | 0.15 | 14,730 | 135 | 1.85 | +$40,055 | −2.75R |
+| **`Swing strength`** | **4** | **6** | 14,705 | 125 | **1.68** | **+$32,275** | −2.75R |
+| **`ATR period`** | **8** | **16** | 14,739 | 134 | **1.54** | **+$25,640** | **−6.64R / $3,005** |
 
 **`Min reward:risk` and `Level merge` are inert.** Neither moves the result beyond noise, and
 level merge moves the sweep count by six in fourteen thousand.
@@ -611,9 +612,24 @@ side to confirm a pivot instead of four, which on 2-minute bars means the book o
 structure after twenty-four minutes rather than sixteen. In a session where the whole edge is
 continuations off fresh breaks, that is too slow.
 
-**None of the three explains the sweep rate.** All three runs sit at one sweep per 3.4 bars.
-Whatever doubled it is among `Max bars to reclaim` 6 to 4, `ATR period` 16 to 8, or the
-penetration change itself — and the throughput argument above points at the first two.
+**`ATR period` matters most, and the profit factor understates it.** Sixteen instead of eight
+costs 0.32 of profit factor on the same 134 trades — but the tail is where the damage is:
+worst trade goes from −2.75R to **−6.64R**, largest single loss from $1,315 to **$3,005**, and
+the widest stop the structure implied from 562 ticks to 726.
+
+The mechanism is lag. Stops sit a quarter-ATR beyond the retest extreme, so the ATR sets the
+buffer. A sixteen-period ATR on 2-minute bars averages the last thirty-two minutes; when
+volatility rises the buffer is still describing the calm that preceded it, and the stop ends
+up inside current noise. An eight-period ATR keeps up. For a funded account this is the more
+important of the two findings on this page — a $3,005 loss against a $1,225 configured
+maximum is the kind of trade that ends an evaluation.
+
+**None of the four explains the sweep rate.** Every run sits at one sweep per 3.4 bars,
+within thirty of each other. Whatever changed it is `Max bars to reclaim` 6 to 4, the
+penetration change itself, or one of the smaller untested thresholds.
+
+**Both parameters that matter are already at their better value in the shipped template.**
+Four isolation runs, no change to make.
 
 ### Minimum reward:risk: a plateau, not a gradient
 
