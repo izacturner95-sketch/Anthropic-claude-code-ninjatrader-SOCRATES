@@ -681,18 +681,31 @@ recorded, nothing blocked.
 
 | | Trades | Won | Net | Per trade |
 |---|---|---|---|---|
-| **Neither step objected** | **4** | **0** | **−$3,435** | **−$858.75** |
+| **Neither step objected** | **4** | **0%** | **−$3,435** | **−$858.75** |
 | Step 5 would refuse | 115 | 41% | +$34,955 | +$303.96 |
+| Step 6 would refuse | 116 | 41% | +$41,065 | **+$354.01** |
+| Both objected | 100 | | | |
 | Refused by either (distinct) | 131 | | +$43,490 | +$331.98 |
 | The book | 135 | 41% | +$40,055 | +$296.70 |
 
 **Running both steps live would have left four trades, none of them winners, losing
 $3,435.** That is the whole answer and it needed one run.
 
-**Step 5 is refusing average trades, not bad ones.** The 115 it would block won 41% and made
-$303.96 each, against a book that won 41% and made $296.70. It is not selecting; it is
-sampling. Randomly removing trades from a positive-expectancy book costs money in
-proportion to how many it removes, and this removes 85% of them.
+**Neither step changes the win rate at all.** Both refused sets won exactly 41%, the book's
+own figure. Whatever these confirmations are measuring, it is uncorrelated with whether the
+trade works.
+
+**Step 5 samples; step 6 is worse than sampling.** Step 5's refused trades made $303.96 each
+against a book average of $296.70 — indistinguishable from removing trades at random, and it
+removes 85% of them. Step 6's made **$354.01**, nineteen percent *above* the book. It is
+selecting against the largest payoffs, which is the exact inverse of a filter's job.
+
+Since the win rates match, the difference is entirely in the size of the winners: the trades
+step 6 refuses are the ones that ran furthest. There is a tempting hypothesis in that — that
+the best cash continuations happen precisely when NQ is *not* leading ES, so the inverse of
+step 6 would be a filter. It is refused here for the same reason every other post-hoc
+inversion in this document was: a mechanism invented to fit a result on 116 observations is
+fitting, and nothing about the strategy predicted it in advance.
 
 **Why this differs from the overnight result, where step 5 is worth 1.71 → 1.96.** The
 confirmations were built to rescue a noisy population — they were the answer to entries that
