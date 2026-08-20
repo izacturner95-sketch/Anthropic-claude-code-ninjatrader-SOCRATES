@@ -141,10 +141,12 @@ Against the 2.03 recorded for `VX 08-26` on the looser settings, over a window a
 longer. Step 5 is behaving on the futures contract: 4 quiet-skips against 50 direction
 rejections and 74 confirmations.
 
-**It survives losing its best trade.** One trade returned +15.97R, roughly $10,400 of the
-$29,590. Removing it entirely leaves 45 trades at profit factor 2.12 and $426 each — lower,
-still comfortably profitable. The result is concentrated, which is normal for swing-target
-exits, but it does not rest on a single fill.
+**It survives losing its best trade.** One trade returned +15.97R. Its dollar value is not
+in the summary — risk ranged from $227 to $986 across the book — so the removal is bounded
+rather than exact: at the mean risk of $650 it is worth about $10,400 and the remaining 45
+trades come to profit factor 2.1; at the largest risk in the book, 1.8. Lower either way,
+profitable either way. The result is concentrated, which is normal for swing-target exits,
+but it does not rest on a single fill.
 
 **The window is not as out-of-sample as it looks.** Two of its three months are the window
 every threshold was chosen on. Only a month is genuinely new.
