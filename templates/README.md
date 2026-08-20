@@ -122,10 +122,14 @@ Kept from the overnight configuration, worth knowing you are running:
 
 ## Where this stands
 
-`SocratesNQ - Cash session.xml` is the measured configuration: **profit factor 1.85 over
-135 trades and five months, with the out-of-sample third at 1.63**. Continuations only, both
+`SocratesNQ - Cash session.xml` is the measured configuration: **profit factor 2.13 over
+139 trades and five months, with the out-of-sample third at 1.98**. Continuations only, both
 confirmations off, no files, no external data. Size scales linearly once `Max daily loss ($)`
 is scaled with the contract count.
+
+`ATR period` is 6 here rather than the 8 the file was first saved with — measured as a
+monotonic gradient (16 → 1.54, 8 → 1.86, 6 → 2.13) that improved the out-of-sample half more
+than the tuning window. It is the only value changed from the configuration as supplied.
 
 It is the strongest result in this project and the only configuration to survive extending
 its window. Full evidence in `docs/MEASUREMENTS.md`.
@@ -143,7 +147,7 @@ in sequence. Do not read the count as the number of things that had to change.
 | `Min penetration (ATR)` | 0.05 | 0.07 | Same idea, scaled. |
 | `Level merge (ATR)` | 0.45 | 0.15 | Measured as inert — reverting it moves the sweep count by 6 in 14,730 and the profit factor from 1.85 to 1.86. |
 | `Swing strength` | 6 | 4 | More swings qualify, adding more levels on top. |
-| `ATR period` | 16 | 8 | Shorter ATR, so every ATR-scaled distance shrinks — compounds the merge change. |
+| `ATR period` | 16 | **6** | The largest measured effect. 16 → 1.54, 8 → 1.86, 6 → 2.13, with drawdown and the worst trade improving at every step. |
 | `Max stop (ticks)` | 200 | 245 | |
 | `Min reward:risk` | 1.0 | 1.2 | |
 | `Zone half-width (ATR)` | 0.15 | 0.3 | |

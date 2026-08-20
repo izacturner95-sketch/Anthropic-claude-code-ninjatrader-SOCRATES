@@ -96,7 +96,7 @@
       <MaxTradesPerDay>0</MaxTradesPerDay>
       <MaxConsecutiveLosses>2</MaxConsecutiveLosses>
       <CarryReplayRiskState>false</CarryReplayRiskState>
-      <AtrPeriod>8</AtrPeriod>
+      <AtrPeriod>6</AtrPeriod>
       <SwingStrength>4</SwingStrength>
       <UseFourHourPivots>false</UseFourHourPivots>
       <OpeningRangeMinutes>14</OpeningRangeMinutes>

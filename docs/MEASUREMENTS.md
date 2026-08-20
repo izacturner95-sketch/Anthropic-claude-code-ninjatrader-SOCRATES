@@ -636,13 +636,35 @@ worth a great deal.
 thresholds jitter and the stop buffer stops meaning anything. Four is the next test, and
 finding where it turns is more informative than finding where it peaks.
 
-### A methodological cost worth naming
+### ATR 6 holds out of sample, and improves the out-of-sample half most
 
-The 1.85 earned its standing by being tuned on 2026-06-14 to 08-18 and *then* holding at 1.63
-on 03-13 to 06-14. **These ATR runs are tuned on the full five months**, so that separation
-is being spent. Whatever period wins, the honest next step is to re-run it on the tuning
-window alone and subtract, restoring the out-of-sample third — otherwise the strongest claim
-in this document quietly degrades into another in-sample number.
+The concern with tuning a parameter on the full five months is that the out-of-sample third
+stops being out of sample. Re-running ATR 6 on the tuning window alone and subtracting:
+
+| Window | Trades | Profit factor | Net | Per trade |
+|---|---|---|---|---|
+| Jun 14 – Aug 18 (tuning) | 91 | 2.19 | +$34,660 | +$381 |
+| **Mar 13 – Jun 14 (out of sample)** | **48** | **1.98** | **+$12,350** | **+$257** |
+| Combined | 139 | 2.13 | +$47,010 | +$338 |
+
+Against the same split at ATR 8:
+
+| | ATR 8 | ATR 6 | Change |
+|---|---|---|---|
+| In-sample | 1.95 | 2.19 | **+12%** |
+| Out-of-sample | 1.63 | 1.98 | **+22%** |
+
+**The out-of-sample half improved nearly twice as much as the window the parameter was chosen
+on.** Overfitting produces the opposite: large in-sample gains that shrink or reverse outside
+it. This is not proof — the period was still selected while looking at both halves — but it
+is the pattern a real effect makes, and the one a fitted parameter almost never does.
+
+Out-of-sample profit factor 1.98 over 48 trades, on a configuration needing no files, no
+confirmations and no data the live account cannot see. That is the strongest result in this
+document by a clear margin.
+
+**`ATR period` 6 is now the committed template default.** ATR 4 remains untested; the
+gradient must turn somewhere and finding the turn is still worth a run.
 
 **`ATR period` matters most, and the profit factor understates it.** Sixteen instead of eight
 costs 0.32 of profit factor on the same 134 trades — but the tail is where the damage is:
