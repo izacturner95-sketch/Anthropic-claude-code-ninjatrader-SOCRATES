@@ -156,6 +156,38 @@ that is where `VX 08-26` history begins — NinjaTrader does not carry a retired
 data, so any VX-based configuration is bounded by the current contract's life. The base
 system can be tested further back with `Vix mode` off; step 5's contribution cannot.
 
+### The base system over five months
+
+Same settings, `Vix mode` off, so nothing bounds the window but NQ's own bars:
+2026-03-13 to 2026-08-19.
+
+| | All hours | **Overnight only** | Cash only |
+|---|---|---|---|
+| Trades | 78 | **63** | 15 |
+| Profit factor | 1.47 | **1.93** | 0.38 |
+| Net | +$17,035 | **+$23,665** | −$6,630 |
+| Per trade | +$218 | **+$376** | −$442 |
+
+**The unfiltered reversal system is profitable across five months and 78 trades**, two of
+those months outside the window every threshold was chosen on. That is the result the whole
+exercise was for. It is the opposite of what the cash session returned under the same test,
+and it is why one of these sessions is a strategy and the other is closed.
+
+**The overnight instance is trading the cash session and losing money doing it.**
+`Trading hours` = `ExtendedHours` runs 18:00 to 16:45, which contains the whole cash
+session. Fifteen of the 78 trades were taken in it, at 0.38 and −$442 each, against $376
+each overnight. Excluding them lifts the run from 1.47 to **1.93** and adds $6,630 — the
+largest single improvement available here, and it requires no new belief about anything.
+The cash session's own five-month test independently returned 0.91 unfiltered.
+
+`TradingHoursMode.Custom` handles a window that wraps midnight, so this is three settings:
+`Session start` 180000, `Session end` 090000, `Flatten` 092500.
+
+**One risk note.** The largest single loss was $1,705 against a 200-tick cap worth $1,000 —
+341 ticks, well past the stop. Twenty-two of 78 trades overran 1R, worst −2.46R, costing
+0.08R a trade. That is the price of holding through thin hours and it is not a bug, but a
+funded account should be sized on the $1,705 rather than the $1,000.
+
 ---
 
 ## The one out-of-sample test
