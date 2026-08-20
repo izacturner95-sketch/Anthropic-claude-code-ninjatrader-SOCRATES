@@ -526,15 +526,18 @@ of this one:
 combined figure moved away from breakeven as the sample grew. That is the direction that
 says 0.96 was the optimistic end of noise rather than a near miss.
 
-**The cash session is closed at this penetration threshold.** Not for want of a filter, and
-not for want of live data — the underlying continuation sequence loses money on the largest
-and most honest sample taken. Every configuration above 1.0 in the table was a subtraction
-from this population, and the two that looked best were 17 and 54 trades on the tuning
-window.
+**At this penetration threshold the cash session is finished.** Not for want of a filter,
+and not for want of live data — the underlying continuation sequence loses money on the
+largest sample taken at these settings. Every configuration above 1.0 in the table was a
+subtraction from this population, and the two that looked best were 17 and 54 trades on the
+tuning window.
 
-That verdict was later challenged by changing the entry premise rather than the filtering —
-see *A deeper penetration requirement* below. It has not yet been overturned, because the
-test that produced this one has not been repeated on the new settings.
+**This verdict has since been overturned, and the qualifier is the whole point.** Requiring
+24 points of penetration rather than 5 changes what counts as a broken level, and that
+configuration returns 1.85 over five months with the out-of-sample third at 1.63 — see
+*A deeper penetration requirement* below. What was closed was a threshold, not a session.
+The general lesson stands: six runs of filter search could not rescue this population, and
+one change to the entry premise did.
 
 Worth stating what it cost to learn: about a week of evenings and no capital. The
 alternative was discovering it on the funded account.
@@ -566,12 +569,36 @@ penetration threshold cannot cause on its own. Something upstream changed the le
 too (swing strength, level merge distance, or order block settings). Whatever it was should
 be recorded, or this run is not reproducible.
 
-**Untested, and the test is available.** This is the same two-month window that returned
-0.96 before, and that window is known to be the optimistic one: extending the earlier
-configuration to five months took it from 0.96 to 0.91, with the added three months at 0.82.
-Nothing here reads `^VIX` or any file — both confirmations are off — so the window is bounded
-only by NQ 2-minute history, which reaches at least to 2026-03-13. Until that run exists
-this is a two-month in-sample number, which is the same standing the 1.35 and the 1.73 had.
+### It passes out of sample
+
+Extended to 2026-03-13, same settings. The two-month run is a subset, so the added months
+separate by subtraction:
+
+| Window | Trades | Profit factor | Net | Per trade |
+|---|---|---|---|---|
+| Jun 14 – Aug 18 (tuning window) | 90 | 1.95 | +$30,790 | +$342 |
+| **Mar 13 – Jun 14 (out of sample)** | **45** | **1.63** | **+$9,265** | **+$206** |
+| Five months combined | 135 | 1.85 | +$40,055 | +$297 |
+
+**This is the first configuration in this document to survive that test.** Every previous
+cash candidate degraded when the window grew — the original threshold went 0.96 in-sample to
+0.82 out, and the combined figure moved *away* from breakeven as the sample grew. This one
+gives up profit factor out of sample, as anything tuned on a window should, and stays
+comfortably profitable. Win rate held at 41% across both.
+
+**It survives losing its best trade.** One trade returned +15.46R. Its dollar value is not
+in the summary and risk ranges elevenfold, so this is bounded rather than exact: at mean
+risk it is worth about $9,545 and the remaining 134 trades come to 1.65; at the largest
+risk in the book, 1.45. Profitable either way.
+
+**Drawdown is $5,055 across five months**, against $9,340 for the original threshold over a
+shorter window.
+
+**Two things still owed on this result.** The upstream change that doubled the sweep rate is
+still unrecorded, so the run is not reproducible from this document alone — the penetration
+threshold cannot account for it. And 21 of 135 trades overran 1R, worst −2.75R, with the
+largest single loss $1,315 against a $1,225 cap; perfect stops would give +0.62R against the
+actual +0.53R.
 
 ---
 

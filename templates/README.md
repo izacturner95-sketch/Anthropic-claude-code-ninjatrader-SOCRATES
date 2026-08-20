@@ -120,18 +120,21 @@ Kept from the overnight configuration, worth knowing you are running:
 
 ---
 
-## Where this stands: closed
+## Where this stands
 
-**The cash session does not have an edge.** Unfiltered, over five months and 147 trades,
-it returns profit factor 0.91. The three months outside the tuning window are 0.82 — worse
-than the two months everything was fitted to.
+**These templates are out of date.** They carry `Min penetration (points)` at 5, and at that
+threshold the cash session returns 0.91 over five months and does not have an edge.
 
-These templates are kept as a record of what was tried, not as configurations to run. The
-1.35 that appears in the history was 54 trades on the tuning window, using leader files
-that cannot be supplied live; both confirmations were later shown to do nothing or harm
-against the unfiltered baseline.
+Raising it to 24 points — a change to what counts as a broken level, not another filter —
+returns **1.85 over five months and 135 trades, with the out-of-sample third at 1.63**. That
+is the only configuration in this project to survive extending its window, and it needs no
+files and no confirmations: both steps 5 and 6 are off.
 
-Full evidence in `docs/MEASUREMENTS.md`. **The overnight session is the working strategy.**
+The settings that produced it are not fully recorded yet; the run's sweep rate implies an
+upstream level change beyond the penetration threshold. Until that is pinned down these
+files stay as a record of what was tried rather than something to load.
+
+Full evidence in `docs/MEASUREMENTS.md`.
 
 ### Already settled — do not spend runs on these
 
