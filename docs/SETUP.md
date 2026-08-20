@@ -309,6 +309,37 @@ It defaults to 5-minute bars, 60 days, extended hours on, and reports the row co
 date span for each symbol — plus a warning when a download came back regular-hours only,
 which otherwise looks identical to a correct one.
 
+### Checking what a file actually covers
+
+A download that succeeds is not the same as a download with no holes, and the strategy can
+only tell you the consequence — step 5 reading a source as quiet — not the cause.
+
+```
+python3 tools/check_file_series.py "C:/Users/you/Documents/NinjaTrader 8/SocratesData"
+```
+
+Or double-click `tools/check_file_series.bat`. Point it at one file or the whole folder. It
+reports the row count and date span, the share of rows inside the session, weekdays with no
+data at all, and every gap longer than the strategy's freshness window — which is the
+number to compare against a run's quiet-skip count. Pass `--fresh` to match whatever
+`Vix max data age (minutes)` is set to, and `--session` for a window other than the cash
+session.
+
+Times are converted with the machine's local time zone, which is what `FileSeries` itself
+does. So the times it prints are the times the strategy sees. If they look shifted, the
+shift is real and `File time offset (minutes)` is what corrects it — the file is not wrong,
+the machine and the chart's exchange time zone simply disagree.
+
+**`VIX` and `^VIX` are different things.** NinjaTrader lists a `VIX` instrument as a stock;
+the volatility index is `^VIX`, which is what this script downloads and what belongs in the
+file. A step 5 configured with `Vix symbol` = `VIX` and no usable file path is confirming
+against the wrong instrument, and nothing in the run will look broken. The startup banner
+names the source for exactly this reason — check it says `read from FILE`.
+
+`^VIX` is regular-hours only, 09:30–16:15 ET. That makes the file a complete source for the
+cash session and useless overnight, which is why the overnight configuration uses `VX ##-##`
+instead.
+
 **Free intraday history is the binding constraint**, not the tooling. Yahoo serves roughly
 60 days of 5-minute bars and 7 days of 1-minute, whatever you ask for. Options:
 
