@@ -585,6 +585,37 @@ rate* — was pointing at it the whole time.
 
 The full configuration is committed as `templates/SocratesNQ - Cash session.xml`.
 
+### Minimum reward:risk 1.2 to 1.0
+
+Same window, same everything else. **Identical trade population** — 135 trades, 244 setups,
+the same risk-per-trade range and the same best and worst trades — because this parameter
+was not rejecting anything here. Its only effect was which target each setup used.
+
+| | 1.2 | **1.0** |
+|---|---|---|
+| Targets from a previous swing | 586 | **595** |
+| Targets from the R fallback | 46 | **37** |
+| Wins | 55 (41%) | **58 (43%)** |
+| Gross wins | $87,145 | $87,315 |
+| Gross losses | $47,090 | **$45,320** |
+| Net | +$40,055 | **+$41,995** |
+| Profit factor | 1.85 | **1.93** |
+| Largest drawdown | $5,055 | **$4,830** |
+
+**Nine setups changed target, and the gain came from smaller losses rather than bigger
+wins.** Gross wins moved $170; gross losses fell $1,770. A nearer swing target is reached
+before price can turn back, so trades that would have run to the stop chasing a distant 2R
+fallback closed green instead.
+
+**What this says about the fallback.** When a previous swing offers only 1.0–1.2R, taking it
+beats substituting a fixed 2R target. The structure in front of the trade is better
+information than an arithmetic multiple, even when it offers less.
+
+**Nine setups is not a result on its own.** The direction is plausible and the mechanism is
+clean, but a single step proves little. `Min reward:risk` at 0.8 and 0.6 would say whether
+this is a gradient — which would be evidence — or one lucky step. The template still ships
+1.2 until that is known.
+
 ### It passes out of sample
 
 Extended to 2026-03-13, same settings. The two-month run is a subset, so the added months
