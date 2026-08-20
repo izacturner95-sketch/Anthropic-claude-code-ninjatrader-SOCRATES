@@ -673,6 +673,41 @@ again.
 
 ---
 
+## How to tune a confirmation without contaminating the answer
+
+**Use `Shadow confirmations`, not a run per setting.** Every trade is taken; the steps
+record a verdict and block nothing. The summary then reports what each step *would* have
+refused, in trades, wins and dollars, against what neither objected to — with a verdict
+line comparing them.
+
+The reason this matters is feedback. A blocked trade frees the position slot, so different
+later setups become reachable and each filtered run measures a *different population*. This
+is not theoretical: turning reversals off moved completed setups from 197 to 227 and
+surfaced 765 continuation events that had been masked. Comparing two filtered runs compares
+two different books. Shadow mode holds the book fixed and varies only the verdict.
+
+**What the VIX knobs actually do**, since one is counterintuitive:
+
+- `move` is the VIX close now minus its close `Vix lookback bars` ago.
+- `threshold` is `max(Vix min directional move, VIX ATR × Vix min directional move (ATR))`.
+- A long needs `move <= -threshold`; a short needs `move >= +threshold`.
+
+So it is a **signed test with a magnitude floor**, and a flat VIX refuses everything.
+Roughly half of all rejections are direction disagreement alone — which is why it rejected
+64% of cash setups. **Raising the threshold makes it stricter, not more permissive**;
+lowering it toward zero approaches a pure direction test at about 50% rejection. The points
+floor barely binds — measured threshold mean was 0.06 against a 0.02 floor — so the ATR
+multiple is the knob, not the floor.
+
+**What to accept.** A filter earns its place only if the trades it refuses average clearly
+worse than the book. Compare against the book's own per-trade figure in the same run, and
+require the effect to survive in both the tuning window and the out-of-sample window
+separately — two shadow runs, not one. Treat any configuration that leaves fewer than about
+sixty trades as unmeasured regardless of what its profit factor says: the 1.73 in this
+document was seventeen trades and it was noise.
+
+---
+
 ## What this does not tell you
 
 **Everything here is in-sample.** The penetration thresholds, the stop band, step 6's
