@@ -673,6 +673,40 @@ again.
 
 ---
 
+## The cash configuration does not travel to 24 hours
+
+Same settings — 2-minute, 24-point penetration, continuations only — with the session opened
+to the full day instead of 09:30–16:00.
+
+| | Cash only | Full day |
+|---|---|---|
+| Trades | 135 | 223 |
+| Profit factor | **1.85** | 1.23 |
+| Net | +$40,055 | +$16,830 |
+| Per trade | +$297 | +$75 |
+| Largest drawdown | $5,055 | $10,600 |
+| Stops that overran 1R | 21 of 135 (16%) | **74 of 223 (33%)** |
+| Worst trade | −2.75R | **−5.29R** |
+
+**And the cash session itself got worse, not just diluted.** Its own share fell from 135
+trades at 1.85 to **52 trades at 1.34**. The cause is in the rejection table: the daily loss
+halt blocked **336** setups, against 18 in the cash-only run. Overnight losses were spending
+the daily budget before the cash session opened, so the profitable session was being switched
+off by the unprofitable one. Fifty-six percent of all setups in this run never got a chance.
+
+**Two-minute bars do not survive the overnight hours.** Mean stop distance fell from 186
+ticks to 138 and the minimum to 15, because overnight ATR is smaller and every threshold
+here scales off ATR. A fifteen-tick stop in thin hours is not a stop. A third of all trades
+overran 1R, the worst by more than five, and perfect stops would have given +0.46R against
+the actual +0.17R — overruns cost 0.29R a trade, against 0.09R in the cash-only run.
+
+**This is why the two sessions have separate instances.** Cash wants 2-minute bars and the
+overnight wants 5-minute; that was established early and this run is what ignoring it costs.
+The daily risk limit is per-account, so two sessions sharing one instance also share one
+budget, and the worse session spends it first.
+
+---
+
 ## Tuning the confirmations: the answer was don't
 
 Shadow run on the 1.85 configuration, five months, both steps Directional — step 5 on the
