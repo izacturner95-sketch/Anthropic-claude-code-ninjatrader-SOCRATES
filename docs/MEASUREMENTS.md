@@ -370,8 +370,36 @@ from 1.35, and the configuration that earns the most total dollars is still the 
 one. What can be said is that the futures-only path is not obviously dead, which was the
 open question.
 
-**Two runs decompose the rest**, both from the feed-only baseline: `Breadth mode` off
-isolates step 5 on the platform series, and `Vix mode` off isolates relative strength.
+### The full decomposition, and what it exposes
+
+| Step 5 | Step 6 | Trades | Profit factor | Net | Drawdown |
+|---|---|---|---|---|---|
+| `VIX.csv` | leader files | 54 | 1.35 | +$5,660 | $2,375 |
+| feed | off | 52 | 0.81 | −$3,845 | $7,005 |
+| off | NQ vs ES | 26 | 0.95 | −$485 | $3,970 |
+| feed | NQ vs ES | 17 | **1.73** | +$3,510 | $2,380 |
+| **off** | **off** | **not run** | | | |
+
+**Neither confirmation is profitable alone, and together they are 1.73.** Step 5 by itself
+loses money. Relative strength by itself loses money. Applied together they produce the
+best profit factor in the table, on the smallest sample in the table. That combination —
+two ingredients that fail separately, succeeding jointly on 17 observations — is what
+overfitting looks like from the inside. It is not proof of overfitting; genuine
+complementary filters exist. It is a reason to stop reading the number as a finding.
+
+**The baseline has never been run.** Every cell above is a *subtraction* from a population
+nobody has measured. With both confirmations off the cash session would produce roughly two
+hundred trades — four times the largest sample here and the only run in this whole exercise
+with enough observations to mean much on its own. Until it exists there is no answer to the
+question every row above is implicitly claiming: does filtering help at all?
+
+That is the next run, and it outranks any further tuning.
+
+**A note on relative strength's threshold.** It rejected 183 of 230 setups, and the mean
+spread (0.063%) sits just *below* the mean threshold (0.067%) — so more than half the time
+the two indices have not diverged enough for the test to pass at `Min spread (multiple)`
+0.75. That is a tunable, and tuning it against this window before the baseline exists would
+be fitting a filter to noise.
 
 ---
 
