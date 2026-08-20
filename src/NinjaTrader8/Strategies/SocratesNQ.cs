@@ -4010,7 +4010,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public string VixFile { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Breadth mode", GroupName = "8. Step 6 - Leaders", Order = 0)]
+		[Display(Name = "Breadth mode", Description = "Off, or on. Strict and Directional behave identically here - neither the leader count nor the relative strength spread has a key-level test to apply, so both forms report a key level on every pass. Only step 5 distinguishes the two.", GroupName = "8. Step 6 - Leaders", Order = 0)]
 		public ConfirmationMode BreadthMode { get; set; }
 
 		[NinjaScriptProperty]
