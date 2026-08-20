@@ -613,6 +613,37 @@ side to confirm a pivot instead of four, which on 2-minute bars means the book o
 structure after twenty-four minutes rather than sixteen. In a session where the whole edge is
 continuations off fresh breaks, that is too slow.
 
+### ATR period: a real gradient
+
+| ATR period | Trades | Win rate | Profit factor | Net | Drawdown | Worst trade | Largest loss |
+|---|---|---|---|---|---|---|---|
+| 16 | 134 | 42% | 1.54 | +$25,640 | $5,915 | −6.64R | $3,005 |
+| 8 | 134 | 41% | 1.86 | +$39,950 | $5,055 | −2.75R | $1,315 |
+| **6** | 139 | **45%** | **2.13** | **+$47,010** | **$3,630** | **−2.59R** | $1,305 |
+
+**Monotonic on every axis simultaneously** — profit factor up, net up, drawdown down, tail
+less bad, win rate up. That is the shape this document accepts as evidence, and it is the
+same standard the overnight stop band met at 200 > 250 > 300. Nothing here looks like the
+single spike `Min reward:risk` produced.
+
+The mechanism is the same one that made 16 bad, running the other way: ATR sets the stop
+buffer, the retest zone, the zone half-width and the level merge distance all at once, so a
+shorter period makes every one of those describe current conditions rather than the last half
+hour. In a session whose whole edge is continuations off fresh breaks, describing now is
+worth a great deal.
+
+**It must turn somewhere.** At a short enough period the ATR becomes bar range, the
+thresholds jitter and the stop buffer stops meaning anything. Four is the next test, and
+finding where it turns is more informative than finding where it peaks.
+
+### A methodological cost worth naming
+
+The 1.85 earned its standing by being tuned on 2026-06-14 to 08-18 and *then* holding at 1.63
+on 03-13 to 06-14. **These ATR runs are tuned on the full five months**, so that separation
+is being spent. Whatever period wins, the honest next step is to re-run it on the tuning
+window alone and subtract, restoring the out-of-sample third — otherwise the strongest claim
+in this document quietly degrades into another in-sample number.
+
 **`ATR period` matters most, and the profit factor understates it.** Sixteen instead of eight
 costs 0.32 of profit factor on the same 134 trades — but the tail is where the damage is:
 worst trade goes from −2.75R to **−6.64R**, largest single loss from $1,315 to **$3,005**, and
