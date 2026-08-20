@@ -575,9 +575,15 @@ is not a break, it is noise, and the original threshold was treating the two the
 is a claim about the setup, not a filter applied after the fact.
 
 **The sweep rate also doubled** — one per 3.3 bars against one per 5.8 — which a *higher*
-penetration threshold cannot cause on its own. Something upstream changed the level count
-too (swing strength, level merge distance, or order block settings). Whatever it was should
-be recorded, or this run is not reproducible.
+penetration threshold cannot cause on its own. The template has since been recovered and
+the cause is `Level merge (ATR)` falling from 0.45 to **0.15**: levels only merge when
+within 0.15 ATR of each other, so the book holds far more distinct levels and price crosses
+one far more often. `Swing strength` 6 to 4 adds more swing levels on top, and `ATR period`
+16 to 8 shortens the ATR, which shrinks every ATR-scaled distance and compounds the merge
+effect. The run summary's own note — *level count, not penetration depth, is what drives the
+rate* — was pointing at it the whole time.
+
+The full configuration is committed as `templates/SocratesNQ - Cash session.xml`.
 
 ### It passes out of sample
 

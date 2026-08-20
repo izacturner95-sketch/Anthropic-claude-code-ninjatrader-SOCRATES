@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <StrategyTemplate>
   <StrategyType>NinjaTrader.NinjaScript.Strategies.SocratesNQ</StrategyType>
   <Strategy>
@@ -22,7 +22,7 @@
       <Calculate>OnBarClose</Calculate>
       <Displacement>0</Displacement>
       <DisplayInDataBox>true</DisplayInDataBox>
-      <From>2026-06-18T00:00:00</From>
+      <From>2026-03-13T00:00:00</From>
       <IsAutoScale>true</IsAutoScale>
       <Lines />
       <MaximumBarsLookBack>TwoHundredFiftySix</MaximumBarsLookBack>
@@ -84,7 +84,7 @@
       <FixedContracts>1</FixedContracts>
       <MaxContracts>1</MaxContracts>
       <TickValueDollars>5</TickValueDollars>
-      <UseConfidenceSizing>false</UseConfidenceSizing>
+      <UseConfidenceSizing>true</UseConfidenceSizing>
       <FillResolutionMinutes>1</FillResolutionMinutes>
       <TradingHours>Custom</TradingHours>
       <SessionStartTime>93000</SessionStartTime>
@@ -96,51 +96,51 @@
       <MaxTradesPerDay>0</MaxTradesPerDay>
       <MaxConsecutiveLosses>2</MaxConsecutiveLosses>
       <CarryReplayRiskState>false</CarryReplayRiskState>
-      <AtrPeriod>16</AtrPeriod>
-      <SwingStrength>6</SwingStrength>
-      <UseFourHourPivots>true</UseFourHourPivots>
-      <OpeningRangeMinutes>15</OpeningRangeMinutes>
-      <ZoneHalfWidthAtr>0.15</ZoneHalfWidthAtr>
-      <LevelMergeAtr>0.45</LevelMergeAtr>
+      <AtrPeriod>8</AtrPeriod>
+      <SwingStrength>4</SwingStrength>
+      <UseFourHourPivots>false</UseFourHourPivots>
+      <OpeningRangeMinutes>14</OpeningRangeMinutes>
+      <ZoneHalfWidthAtr>0.3</ZoneHalfWidthAtr>
+      <LevelMergeAtr>0.15</LevelMergeAtr>
       <UseOrderBlocks>true</UseOrderBlocks>
       <OrderBlockRequireImbalance>true</OrderBlockRequireImbalance>
-      <OrderBlockDisplacementAtr>1</OrderBlockDisplacementAtr>
-      <OrderBlockMaxLookback>10</OrderBlockMaxLookback>
+      <OrderBlockDisplacementAtr>2.25</OrderBlockDisplacementAtr>
+      <OrderBlockMaxLookback>3</OrderBlockMaxLookback>
       <OrderBlockZone>Body</OrderBlockZone>
-      <MinPenetrationAtr>0.05</MinPenetrationAtr>
-      <MinPenetrationPoints>5</MinPenetrationPoints>
-      <MaxBarsToReclaim>6</MaxBarsToReclaim>
-      <EnableReversals>false</EnableReversals>
+      <MinPenetrationAtr>0.07</MinPenetrationAtr>
+      <MinPenetrationPoints>24</MinPenetrationPoints>
+      <MaxBarsToReclaim>4</MaxBarsToReclaim>
       <EnableContinuations>true</EnableContinuations>
+      <EnableReversals>false</EnableReversals>
       <ContinuationsOnMajorLevelsOnly>false</ContinuationsOnMajorLevelsOnly>
-      <MaxBarsSweepToShift>45</MaxBarsSweepToShift>
+      <MaxBarsSweepToShift>56</MaxBarsSweepToShift>
       <UsePostSweepSwing>false</UsePostSweepSwing>
       <MaxSetupRiskAtr>0</MaxSetupRiskAtr>
       <MaxStructureDistanceAtr>4.5</MaxStructureDistanceAtr>
       <MinDisplacementAtr>1.2</MinDisplacementAtr>
-      <MaxBarsShiftToRetest>15</MaxBarsShiftToRetest>
+      <MaxBarsShiftToRetest>12</MaxBarsShiftToRetest>
       <ZoneMode>BrokenStructure</ZoneMode>
-      <RetestZoneAtr>0.3</RetestZoneAtr>
+      <RetestZoneAtr>0.4</RetestZoneAtr>
       <RequireConfirmationClose>true</RequireConfirmationClose>
       <StopBufferAtr>0.25</StopBufferAtr>
       <TargetBufferTicks>4</TargetBufferTicks>
-      <MinRewardRisk>1</MinRewardRisk>
+      <MinRewardRisk>1.2</MinRewardRisk>
       <TargetRMultiple>2</TargetRMultiple>
       <MinStopTicks>20</MinStopTicks>
-      <MaxStopTicks>200</MaxStopTicks>
-      <VixMode>Directional</VixMode>
-      <VixSymbol>VIX</VixSymbol>
-      <VixBarMinutes>5</VixBarMinutes>
+      <MaxStopTicks>245</MaxStopTicks>
+      <VixMode>Off</VixMode>
+      <VixSymbol>^VIX</VixSymbol>
+      <VixBarMinutes>2</VixBarMinutes>
       <VixLookbackBars>6</VixLookbackBars>
       <VixMinDirectionalMove>0.02</VixMinDirectionalMove>
       <VixMinDirectionalMoveAtr>0.5</VixMinDirectionalMoveAtr>
       <VixKeyLevelTolerance>0.35</VixKeyLevelTolerance>
       <VixMaxDataAgeMinutes>15</VixMaxDataAgeMinutes>
-      <VixSkipWhenQuiet>true</VixSkipWhenQuiet>
-      <VixFile>C:\Users\izact\Documents\NinjaTrader 8\SocratesData\VIX.csv</VixFile>
-      <BreadthMode>Directional</BreadthMode>
-      <BreadthSource>Leaders</BreadthSource>
-      <RelativeStrengthSymbol>ES</RelativeStrengthSymbol>
+      <VixSkipWhenQuiet>false</VixSkipWhenQuiet>
+      <VixFile />
+      <BreadthMode>Off</BreadthMode>
+      <BreadthSource>RelativeStrength</BreadthSource>
+      <RelativeStrengthSymbol>ES 09-26</RelativeStrengthSymbol>
       <RelativeStrengthLookback>12</RelativeStrengthLookback>
       <RelativeStrengthMinSpread>0.02</RelativeStrengthMinSpread>
       <RelativeStrengthMultiple>0.75</RelativeStrengthMultiple>
@@ -151,13 +151,13 @@
       <BreadthMaxDataAgeMinutes>0</BreadthMaxDataAgeMinutes>
       <BreadthActiveStart>93000</BreadthActiveStart>
       <BreadthActiveEnd>160000</BreadthActiveEnd>
-      <LeaderFiles>C:\Users\izact\Documents\NinjaTrader 8\SocratesData\AAPL.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\MSFT.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\NVDA.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\AMZN.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\META.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\GOOGL.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\TSLA.csv</LeaderFiles>
+      <LeaderFiles />
       <FileReloadSeconds>60</FileReloadSeconds>
       <FileTimeOffsetMinutes>0</FileTimeOffsetMinutes>
       <ShowChartVisuals>true</ShowChartVisuals>
       <ShowSetupZones>true</ShowSetupZones>
       <ShowStatsPanel>true</ShowStatsPanel>
-      <ShadowConfirmations>false</ShadowConfirmations>
+      <ShadowConfirmations>true</ShadowConfirmations>
       <EnableLogging>true</EnableLogging>
       <VerboseLogging>false</VerboseLogging>
       <StatusEveryBars>12</StatusEveryBars>
