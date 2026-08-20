@@ -22,7 +22,7 @@
       <Calculate>OnBarClose</Calculate>
       <Displacement>0</Displacement>
       <DisplayInDataBox>true</DisplayInDataBox>
-      <From>2026-06-18T00:00:00</From>
+      <From>2026-03-15T00:00:00</From>
       <IsAutoScale>true</IsAutoScale>
       <Lines />
       <MaximumBarsLookBack>TwoHundredFiftySix</MaximumBarsLookBack>
@@ -31,7 +31,7 @@
       <Plots />
       <ScaleJustification>Right</ScaleJustification>
       <ShowTransparentPlotsInDataBox>false</ShowTransparentPlotsInDataBox>
-      <To>2026-08-18T00:00:00</To>
+      <To>2026-08-19T00:00:00</To>
       <IsDataSeriesRequired>true</IsDataSeriesRequired>
       <IsOverlay>true</IsOverlay>
       <SelectedValueSeries>0</SelectedValueSeries>
@@ -73,7 +73,7 @@
       <OrderFillResolutionValue>1</OrderFillResolutionValue>
       <RestartsWithinMinutes>5</RestartsWithinMinutes>
       <SetOrderQuantity>Strategy</SetOrderQuantity>
-      <Slippage>1</Slippage>
+      <Slippage>3</Slippage>
       <StartBehavior>WaitUntilFlat</StartBehavior>
       <StopTargetHandling>PerEntryExecution</StopTargetHandling>
       <SupportsOptimizationGraph>true</SupportsOptimizationGraph>
@@ -86,17 +86,17 @@
       <TickValueDollars>5</TickValueDollars>
       <UseConfidenceSizing>false</UseConfidenceSizing>
       <FillResolutionMinutes>1</FillResolutionMinutes>
-      <TradingHours>ExtendedHours</TradingHours>
-      <SessionStartTime>94500</SessionStartTime>
-      <SessionEndTime>154500</SessionEndTime>
-      <FlattenTime>155500</FlattenTime>
-      <MaxDailyLossDollars>0</MaxDailyLossDollars>
+      <TradingHours>Custom</TradingHours>
+      <SessionStartTime>180000</SessionStartTime>
+      <SessionEndTime>90000</SessionEndTime>
+      <FlattenTime>180000</FlattenTime>
+      <MaxDailyLossDollars>1000</MaxDailyLossDollars>
       <DailyProfitTargetDollars>0</DailyProfitTargetDollars>
       <StopForDayOnProfitTarget>false</StopForDayOnProfitTarget>
       <MaxTradesPerDay>0</MaxTradesPerDay>
       <MaxConsecutiveLosses>0</MaxConsecutiveLosses>
       <CarryReplayRiskState>false</CarryReplayRiskState>
-      <AtrPeriod>16</AtrPeriod>
+      <AtrPeriod>8</AtrPeriod>
       <SwingStrength>6</SwingStrength>
       <UseFourHourPivots>true</UseFourHourPivots>
       <OpeningRangeMinutes>15</OpeningRangeMinutes>
@@ -110,12 +110,12 @@
       <MinPenetrationAtr>0.05</MinPenetrationAtr>
       <MinPenetrationPoints>5</MinPenetrationPoints>
       <MaxBarsToReclaim>6</MaxBarsToReclaim>
+      <EnableContinuations>false</EnableContinuations>
       <EnableReversals>true</EnableReversals>
-      <EnableContinuations>true</EnableContinuations>
       <ContinuationsOnMajorLevelsOnly>false</ContinuationsOnMajorLevelsOnly>
       <MaxBarsSweepToShift>45</MaxBarsSweepToShift>
       <UsePostSweepSwing>false</UsePostSweepSwing>
-      <MaxSetupRiskAtr>3.5</MaxSetupRiskAtr>
+      <MaxSetupRiskAtr>2.5</MaxSetupRiskAtr>
       <MaxStructureDistanceAtr>4.5</MaxStructureDistanceAtr>
       <MinDisplacementAtr>1.2</MinDisplacementAtr>
       <MaxBarsShiftToRetest>15</MaxBarsShiftToRetest>
@@ -124,12 +124,12 @@
       <RequireConfirmationClose>true</RequireConfirmationClose>
       <StopBufferAtr>0.25</StopBufferAtr>
       <TargetBufferTicks>4</TargetBufferTicks>
-      <MinRewardRisk>1</MinRewardRisk>
+      <MinRewardRisk>1.3</MinRewardRisk>
       <TargetRMultiple>2</TargetRMultiple>
       <MinStopTicks>20</MinStopTicks>
-      <MaxStopTicks>250</MaxStopTicks>
+      <MaxStopTicks>225</MaxStopTicks>
       <VixMode>Directional</VixMode>
-      <VixSymbol>VIX</VixSymbol>
+      <VixSymbol>VX 08-26</VixSymbol>
       <VixBarMinutes>5</VixBarMinutes>
       <VixLookbackBars>6</VixLookbackBars>
       <VixMinDirectionalMove>0.02</VixMinDirectionalMove>
@@ -137,15 +137,21 @@
       <VixKeyLevelTolerance>0.35</VixKeyLevelTolerance>
       <VixMaxDataAgeMinutes>15</VixMaxDataAgeMinutes>
       <VixSkipWhenQuiet>true</VixSkipWhenQuiet>
-      <VixFile>C:\Users\izact\Documents\NinjaTrader 8\SocratesData\VIX.csv</VixFile>
+      <VixFile />
       <BreadthMode>Directional</BreadthMode>
+      <BreadthSource>RelativeStrength</BreadthSource>
+      <RelativeStrengthSymbol>ES 09-26</RelativeStrengthSymbol>
+      <RelativeStrengthLookback>12</RelativeStrengthLookback>
+      <RelativeStrengthMinSpread>0.02</RelativeStrengthMinSpread>
+      <RelativeStrengthMultiple>0.3</RelativeStrengthMultiple>
       <BreadthSymbols>AAPL,MSFT,NVDA,AMZN,META,GOOGL,TSLA</BreadthSymbols>
       <BreadthBarMinutes>5</BreadthBarMinutes>
       <BreadthMinAligned>3</BreadthMinAligned>
       <BreadthMinMovePercent>0.3</BreadthMinMovePercent>
+      <BreadthMaxDataAgeMinutes>0</BreadthMaxDataAgeMinutes>
       <BreadthActiveStart>40000</BreadthActiveStart>
       <BreadthActiveEnd>200000</BreadthActiveEnd>
-      <LeaderFiles>C:\Users\izact\Documents\NinjaTrader 8\SocratesData\AAPL.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\MSFT.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\NVDA.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\AMZN.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\META.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\GOOGL.csv,C:\Users\izact\Documents\NinjaTrader 8\SocratesData\TSLA.csv</LeaderFiles>
+      <LeaderFiles />
       <FileReloadSeconds>60</FileReloadSeconds>
       <FileTimeOffsetMinutes>0</FileTimeOffsetMinutes>
       <ShowChartVisuals>true</ShowChartVisuals>

@@ -151,10 +151,10 @@ but it does not rest on a single fill.
 **The window is not as out-of-sample as it looks.** Two of its three months are the window
 every threshold was chosen on. Only a month is genuinely new.
 
-**And the window cannot be extended while step 5 is on.** The run begins 2026-05-17 because
-that is where `VX 08-26` history begins — NinjaTrader does not carry a retired contract's
-data, so any VX-based configuration is bounded by the current contract's life. The base
-system can be tested further back with `Vix mode` off; step 5's contribution cannot.
+**The window claim here was wrong.** This run began 2026-05-17 and that was attributed to
+`VX 08-26` history starting there. A later run with the same symbol reaches back to
+2026-03-15 with `no data 0` — so either the history was extended in between or the
+truncation had another cause. Do not treat VX as bounding the backtest window.
 
 ### The base system over five months
 
@@ -937,6 +937,50 @@ step 5 live gives 25 trades worth $5,750 in place of 71 worth $9,285. Better tra
 of them, less money. At 25 trades that is under the sixty-trade bar this document sets for
 believing anything, so it settles nothing on its own — but it is consistent with step 5
 earning its place overnight, which was measured separately at 1.71 to 1.96.
+
+---
+
+## The overnight session with its hours corrected
+
+Session gated to 18:00–09:00 with the flatten window disabled, reversals only, step 5 on
+`VX 08-26`, step 6 on relative strength at multiple 0.3, slippage 3 modelled.
+2026-03-15 to 2026-08-19, 5-minute.
+
+| | |
+|---|---|
+| Trades | **33** |
+| Win rate | 58% |
+| Profit factor | **4.48** |
+| Net | +$34,265 |
+| Per trade | +$1,038 |
+| Largest drawdown | **$1,520** |
+| Mean R | +1.79 |
+
+**Read the trade count before the profit factor.** Thirty-three trades over five months is
+1.5 a week, and 4.48 with a 58% win rate is not a number this document has any business
+believing on that sample. The progression is the warning: the overnight session has gone
+1.93 on 63 trades, to 2.72 on 46, to 4.48 on 33. Profit factor rising as the sample shrinks
+is exactly the shape that produced the cash session's 1.73-on-17-trades, which turned out to
+be noise.
+
+**It does survive losing its best trade**, which is the one point in its favour. The +16.11R
+trade is worth about $10,400 at mean risk; removing it leaves 32 trades at **3.42** and $745
+each, or 2.85 at the largest risk in the book. So this is not one fill carrying a mediocre
+book.
+
+**The session gate is doing real work.** Forty-eight setups were refused as `OutsideSession`
+— a third of everything the engine completed — and those are the cash-hours reversals that
+the five-month split measured at −$442 each.
+
+**Step 6 is inert here.** At `Min spread (multiple)` 0.3 it refused 6 setups and confirmed
+53. It is switched on and filtering essentially nothing, which is worth knowing before any
+weight is placed on it.
+
+**The test this needs is the one the cash configuration passed.** Re-run on 2026-06-17 to
+08-19 alone and subtract, so the March-to-June portion becomes a genuine out-of-sample third.
+Until then 4.48 is a two-month-tuned configuration measured on five months of the same
+tuning, and its sample would not clear the sixty-trade bar this document sets even if it were
+clean.
 
 ---
 
