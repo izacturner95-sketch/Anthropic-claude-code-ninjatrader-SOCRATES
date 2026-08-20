@@ -405,22 +405,44 @@ that cell.
 only claim in this table that still stands up — but it depends on leader files that cannot
 be supplied live, and it has never been tested outside this window.
 
-### What the baseline makes possible
+### The five-month run, which closes it
 
-With both confirmations off, **the backtest is no longer limited by confirmation data.**
-Every short window in this document — two months, one contract — was short because step 5
-and step 6 needed VX, leader or file history that does not survive a contract roll. Nothing
-constrains an unfiltered run except NQ's own bars.
+With both confirmations off nothing limited the backtest to one contract's history any
+more, so the window went back to 2026-03-13. **147 trades, profit factor 0.91,
+−$4,985.**
 
-That turns the real question from "which filter rescues this" into one that can actually be
-answered: **run the unfiltered configuration over twelve months.** Three to six hundred
-trades instead of ninety-five, across more than one regime. If the raw continuation
-sequence is breakeven there too, the cash session is finished and no filter search on two
-months of data was ever going to change that. If it is meaningfully above 1.0, then there
-is something real to filter and this whole exercise starts again on a sample that can carry
-it.
+The added three months can be separated by subtraction, since the two-month run is a subset
+of this one:
 
-More filters on this window cannot settle anything. More window can.
+| Window | Trades | Profit factor | Net | Per trade |
+|---|---|---|---|---|
+| Two months (in-sample) | 95 | 0.96 | −$1,490 | −$16 |
+| **Three months added** | **52** | **0.82** | **−$3,495** | **−$67** |
+| Five months combined | 147 | 0.91 | −$4,985 | −$34 |
+
+**The out-of-sample period is worse than the window everything was tuned on**, and the
+combined figure moved away from breakeven as the sample grew. That is the direction that
+says 0.96 was the optimistic end of noise rather than a near miss.
+
+**The cash session is closed.** Not for want of a filter, and not for want of live data —
+the underlying continuation sequence loses money on the largest and most honest sample
+taken. Every configuration above 1.0 in the table was a subtraction from this population,
+and the two that looked best were 17 and 54 trades on the tuning window.
+
+Worth stating what it cost to learn: about a week of evenings and no capital. The
+alternative was discovering it on the funded account.
+
+### One thing that is structurally interesting, and is not a reason to reopen this
+
+At a 32% win rate against roughly 2R targets, this system sits almost exactly on its
+arithmetic breakeven line by construction — and stop overruns push it under. Thirty-two of
+147 trades lost more than 1R; with stops that always held, mean R would be +0.04 instead of
+−0.04. So the binding constraint here was never the entry filter that six runs went looking
+for. It was the exit.
+
+That is a genuine observation and it belongs to whatever gets built next, not to this. A
+system that needs perfect stop execution to reach breakeven does not have an edge to
+protect.
 
 ---
 

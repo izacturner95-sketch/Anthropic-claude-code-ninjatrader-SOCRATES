@@ -120,20 +120,18 @@ Kept from the overnight configuration, worth knowing you are running:
 
 ---
 
-## Where this stands
+## Where this stands: closed
 
-**Profit factor 1.35**, +$5,660 over 54 trades, $2,375 drawdown, over 2026-06-17 to
-2026-08-18. Four earlier cash runs had topped out at 0.59 with what looked like a −0.07R
-ceiling; that ceiling claim was wrong.
+**The cash session does not have an edge.** Unfiltered, over five months and 147 trades,
+it returns profit factor 0.91. The three months outside the tuning window are 0.82 — worse
+than the two months everything was fitted to.
 
-Two caveats that matter more than the number:
+These templates are kept as a record of what was tried, not as configurations to run. The
+1.35 that appears in the history was 54 trades on the tuning window, using leader files
+that cannot be supplied live; both confirmations were later shown to do nothing or harm
+against the unfiltered baseline.
 
-- **54 trades, in-sample.** Found by looking at this window. Not a validated edge.
-- **Not a live configuration.** Step 6 rejected 66 setups here using leader data read from
-  files — cash equity snapshots that cannot be supplied in real time. The live question is
-  still open.
-
-Full numbers in `docs/MEASUREMENTS.md`.
+Full evidence in `docs/MEASUREMENTS.md`. **The overnight session is the working strategy.**
 
 ### Already settled — do not spend runs on these
 
