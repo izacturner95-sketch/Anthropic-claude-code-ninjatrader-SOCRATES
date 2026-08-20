@@ -683,6 +683,53 @@ again.
 
 ---
 
+## Size does not scale, because the daily cap is in dollars and size is not
+
+The cash configuration at two contracts instead of one, everything else identical:
+
+| | 1 contract | 2 contracts |
+|---|---|---|
+| Trades | 135 | **90** |
+| Net | +$40,055 | +$36,890 |
+| **Net per contract** | **+$40,055** | **+$18,445** |
+| Profit factor | 1.85 | 1.67 |
+| `Daily risk budget` rejections | 27 | **84** |
+| Mean risk per trade | $617 | $938 *(2× would be $1,235)* |
+| Max risk per trade | $1,214 | $1,470 *(2× would be $2,429)* |
+
+**Two contracts made less money than one.** Not less per contract — less in total. Taking
+the same 135 trades at double size would have returned about $80,110; the run returned
+$36,890, so the sizing removed roughly $43,000 of profit.
+
+**The cause is a pre-trade check, not the market.** An entry is refused when its own intended
+risk exceeds what is left of the day's budget:
+
+```
+intendedRisk   = stopDistanceTicks * TickValueDollars * contracts
+remainingBudget = MaxDailyLossDollars + min(0, dailyRealisedPnL)
+```
+
+`intendedRisk` scales with contracts. `MaxDailyLossDollars` does not. So doubling size halves
+the stop distance the budget can afford — at $5 a tick, a $1,500 cap affords 300 ticks at one
+contract and 150 at two, against a stop band reaching 245 and a median setup implying 130–190.
+
+**The damage is selective, which is why it hurts more than it should.** The rejections are not
+spread across the book: they take the widest-stopped setups first. The mean and maximum risk
+per trade both came in far below double, which is the fingerprint — the large-risk trades were
+never submitted. Those are also where the outsized winners live, so raising size quietly
+converts the strategy into a tight-stop-only version of itself and then trades that version.
+
+**Scale the cap with the contract count**, or the runs do not compare: $1,500 at one contract
+is $3,000 at two. And if the account's real daily limit will not stretch that far, then the
+honest conclusion is that this stop band does not support that size — trade one contract, or
+use MNQ at ten micros per NQ with `Tick value ($)` set to 0.50, which reaches the same
+exposure in tenths and leaves the dollar arithmetic unchanged.
+
+The startup banner now warns when a fresh day's budget cannot afford the full stop band at the
+configured size, and separately when it cannot afford even the minimum stop.
+
+---
+
 ## The deeper penetration does not travel to the overnight session
 
 Overnight instance, reversals only, entries 18:00–09:00, step 5 on, 5-minute,

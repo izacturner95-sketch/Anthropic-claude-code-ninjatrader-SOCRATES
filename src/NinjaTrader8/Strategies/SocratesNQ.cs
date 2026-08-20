@@ -2666,6 +2666,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
+			// The check that actually bites when the contract count goes up. A trade is
+			// refused before submission when its own intended risk exceeds what is left of
+			// the day's budget - and intended risk scales with contracts while the cap does
+			// not. Doubling size halves the stop distance the budget can afford, so the
+			// surviving trades are the tightest-stopped ones, which are also the ones noise
+			// takes out. Both symptoms - far fewer trades and worse realised R - come from
+			// here, and nothing in the output named it.
+			int affordableTicks = (int)Math.Floor(MaxDailyLossDollars / (TickValueDollars * contracts));
+
+			if (affordableTicks < MinStopTicks)
+			{
+				Print(string.Format(
+					"  WARNING: a fresh day's {0:C} budget affords {1} ticks at {2} contract(s), below the {3}-tick",
+					MaxDailyLossDollars, affordableTicks, contracts, MinStopTicks));
+				Print("           minimum stop. Every entry will be refused on the daily risk budget.");
+				Print(string.Format("           Raise the cap to at least {0:C} or cut size.",
+					MinStopTicks * TickValueDollars * contracts));
+			}
+			else if (affordableTicks < worstStopTicks)
+			{
+				Print(string.Format(
+					"  WARNING: a fresh day's {0:C} budget affords {1} of the {2}-tick stop band at {3} contract(s).",
+					MaxDailyLossDollars, affordableTicks, worstStopTicks, contracts));
+				Print("           Wider setups are refused before submission, so size is silently selecting");
+				Print("           for tight stops rather than trading the same book larger. Scale the cap");
+				Print(string.Format("           with the contract count - {0:C} here - or the results will not compare.",
+					worstStopTicks * TickValueDollars * contracts));
+			}
+
 			if (MaxConsecutiveLosses <= 0)
 			{
 				Print(string.Format("  Worst trade     : {0:C}, against a {1:C} daily cap with no consecutive-loss halt.",
