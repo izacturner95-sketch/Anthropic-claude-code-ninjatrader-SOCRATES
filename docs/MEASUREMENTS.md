@@ -177,6 +177,57 @@ Settled. Off.
 
 ---
 
+## The cash session, and why it was abandoned
+
+A second instance was set up for regular hours only: 2-minute bars, `Trading hours`
+Regular, otherwise the tuned configuration. Same window, 2026-06-17 to 2026-08-19.
+
+**The 2-minute chart fixed detection.** On 5-minute bars the cash session produced about
+10% of retests against the ~29% of bars it occupies — the sequence was too slow for fast
+conditions, needing up to 41 bars (3.4 hours) against a 6.5-hour session. On 2-minute bars
+cash retests came in at 27–31%, proportional. A cash 2-minute bar covers roughly what an
+overnight 5-minute bar does, so every threshold meant again what it had been tuned to mean.
+
+Detection was never the problem. The trades were.
+
+| Test | Trades | Profit factor | Mean R | With perfect stops |
+|---|---|---|---|---|
+| Min stop 20 | 23 | 0.54 | −0.40 | −0.09 |
+| Min stop 75 | 15 | 0.54 | −0.40 | −0.25 |
+| Min stop 100 | 11 | 0.66 | −0.31 | −0.15 |
+| Continuations on | 43 | 0.59 | −0.47 | −0.07 |
+
+**Raising the minimum stop did nothing.** Worst case halved from −4.02R to −1.99R and
+expectancy did not move — identical profit factor and mean R across materially different
+trade populations. The counterfactual got *worse*, so the small-stop trades being filtered
+out were among the better ones. Stop overruns were a symptom, not the cause.
+
+**Both premises fail, and the better one is the opposite of overnight's:**
+
+| Setup kind | Trades | Win rate | Profit factor | Per trade |
+|---|---|---|---|---|
+| Reversals | 23 | 13% | 0.40 | −$272 |
+| Continuations | 20 | 35% | 0.90 | −$33 |
+
+Continuations beat reversals decisively here, which is the mirror of the overnight result
+where reversals earned $455 a trade and continuations lost. **Mean reversion belongs to
+the quiet hours and momentum to the active ones** — the regime theory holds. It is simply
+not enough: 0.90 is near breakeven, not above it.
+
+**And the ceiling is breakeven regardless.** With stops that never slipped, the best cash
+run would be −0.07R. Removing every overrun — which no live account can — reaches nothing
+rather than profit. That is what closed the question.
+
+Four runs, decisive. **This is an overnight strategy.** Knowing where an edge lives is
+worth as much as finding it, and it was learned for the cost of a few evenings rather than
+a funded account.
+
+One temptation worth naming and refusing: continuations at 0.90 over 20 trades look close
+enough that a tighter filter might push them over 1.0. At that sample size, finding one
+would be fitting, not measuring.
+
+---
+
 ## Risk settings
 
 **The stop band is the largest single lever on drawdown**, and the relationship is
