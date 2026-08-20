@@ -619,7 +619,8 @@ continuations off fresh breaks, that is too slow.
 |---|---|---|---|---|---|---|---|
 | 16 | 134 | 42% | 1.54 | +$25,640 | $5,915 | −6.64R | $3,005 |
 | 8 | 134 | 41% | 1.86 | +$39,950 | $5,055 | −2.75R | $1,315 |
-| **6** | 139 | **45%** | **2.13** | **+$47,010** | **$3,630** | **−2.59R** | $1,305 |
+| **6** | 139 | 45% | **2.13** | **+$47,010** | **$3,630** | −2.59R | $1,305 |
+| 4 | 138 | **46%** | 2.07 | +$45,535 | $5,295 | **−2.46R** | $1,185 |
 
 **Monotonic on every axis simultaneously** — profit factor up, net up, drawdown down, tail
 less bad, win rate up. That is the shape this document accepts as evidence, and it is the
@@ -632,9 +633,19 @@ shorter period makes every one of those describe current conditions rather than 
 hour. In a session whose whole edge is continuations off fresh breaks, describing now is
 worth a great deal.
 
-**It must turn somewhere.** At a short enough period the ATR becomes bar range, the
-thresholds jitter and the stop buffer stops meaning anything. Four is the next test, and
-finding where it turns is more informative than finding where it peaks.
+**It turns at 4, and gently.** Profit factor falls 2.13 to 2.07 — three percent, inside
+noise, so on that axis 4 and 6 are the same. The separation is drawdown: **$3,630 at 6
+against $5,295 at 4**, a 46% difference on the number a funded account is actually judged by.
+
+That combination is worth reading carefully. Individual trades keep improving all the way
+down — the worst trade runs −6.64R, −2.75R, −2.59R, −2.46R monotonically — while the *run's*
+drawdown turns up. Better trades and a worse equity curve means the losses at ATR 4 arrive
+closer together. A four-period ATR on 2-minute bars is close enough to bar range that its
+thresholds move with each bar, so in a choppy stretch every setup is being measured against
+a threshold that just moved, and the misjudgements correlate.
+
+**Six is a rounded top, not a spike**, which is the shape worth trusting: the parameter can
+drift a step in either direction without the strategy falling over. Settled at 6.
 
 ### ATR 6 holds out of sample, and improves the out-of-sample half most
 
