@@ -122,6 +122,40 @@ regime ending.
 
 ---
 
+## The tightened overnight configuration
+
+NQ, 5-minute, 2026-05-17 to 2026-08-19. Reversals only, step 5 on `VX 08-26`, step 6 off,
+no files. `Max setup risk` 2.5 ATR, `Min reward:risk` 1.3, `Max stop` 200 ticks — tighter
+than the configuration in the table above on all three.
+
+| | |
+|---|---|
+| Trades | 46 (21 won, 46%) |
+| Profit factor | **2.72** |
+| Net | +$29,590 |
+| Largest drawdown | $3,255 |
+| Per trade | +$643 |
+| Overnight / cash split | 42 trades at 2.81 / 4 trades at 1.81 |
+
+Against the 2.03 recorded for `VX 08-26` on the looser settings, over a window a month
+longer. Step 5 is behaving on the futures contract: 4 quiet-skips against 50 direction
+rejections and 74 confirmations.
+
+**It survives losing its best trade.** One trade returned +15.97R, roughly $10,400 of the
+$29,590. Removing it entirely leaves 45 trades at profit factor 2.12 and $426 each — lower,
+still comfortably profitable. The result is concentrated, which is normal for swing-target
+exits, but it does not rest on a single fill.
+
+**The window is not as out-of-sample as it looks.** Two of its three months are the window
+every threshold was chosen on. Only a month is genuinely new.
+
+**And the window cannot be extended while step 5 is on.** The run begins 2026-05-17 because
+that is where `VX 08-26` history begins — NinjaTrader does not carry a retired contract's
+data, so any VX-based configuration is bounded by the current contract's life. The base
+system can be tested further back with `Vix mode` off; step 5's contribution cannot.
+
+---
+
 ## The one out-of-sample test
 
 Everything above was measured on 2026-06-17 to 2026-08-18, which is also the window every

@@ -2202,6 +2202,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Calculate       : {0}, bars required {1}", Calculate, BarsRequiredToTrade));
 			Print(string.Format("  Trading hours   : {0}", DescribeSession()));
 			Print(string.Format("  Sizing          : {0} contract(s), max {1}, daily loss cap {2}", FixedContracts, MaxContracts, DescribeDailyCap()));
+			WarnOnTickValueMismatch();
 			Print(string.Format("  Stop            : {0}", DescribeStop()));
 			Print(string.Format("  Step 5 (VIX)    : {0}", DescribeVixSource()));
 			Print(string.Format("  Step 6 (leaders): {0}", DescribeBreadthSource()));
@@ -2320,6 +2321,38 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StopBufferAtr, TargetBufferTicks, MinRewardRisk));
 
 			Print("===================================================================");
+		}
+
+		/// <summary>
+		/// Check the configured tick value against what the instrument actually pays.
+		///
+		/// Nothing enforces agreement, and a template carried from one contract to another
+		/// keeps the old number: NQ pays $5.00 a tick and MNQ pays $0.50, so a template
+		/// moved from the full contract to the micro reports every risk figure and every R
+		/// multiple ten times too large, and prices any dollar-denominated risk cap ten
+		/// times too loose. The run looks entirely normal.
+		/// </summary>
+		private void WarnOnTickValueMismatch()
+		{
+			if (Instrument == null || Instrument.MasterInstrument == null)
+				return;
+
+			double actual = Instrument.MasterInstrument.PointValue * Instrument.MasterInstrument.TickSize;
+
+			if (actual <= 0)
+				return;
+
+			// A tolerance rather than equality: point values are doubles and some
+			// instruments carry values that do not divide cleanly.
+			if (Math.Abs(actual - TickValueDollars) <= actual * 0.01)
+				return;
+
+			Print(string.Format(
+				"  *** TICK VALUE MISMATCH: 'Tick value ($)' is {0:C} but {1} pays {2:C} a tick.",
+				TickValueDollars, Instrument.MasterInstrument.Name, actual));
+			Print(string.Format(
+				"      Every risk figure and R multiple below is off by {0:N1}x, and any dollar risk cap is priced wrong. Set it to {1:C}.",
+				TickValueDollars / actual, actual));
 		}
 
 		/// <summary>
