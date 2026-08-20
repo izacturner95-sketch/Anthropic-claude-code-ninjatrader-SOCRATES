@@ -336,6 +336,43 @@ live configuration turns out to be, it is not this one. The two candidates that 
 constraint are step 6 off entirely, and `Breadth source` = RelativeStrength, which reads
 NQ against ES and is futures-only on both sides. Neither has been measured on this session.
 
+### Moving off the files
+
+Three runs, same window, same reversals-off baseline, varying only where the two
+confirmations read from.
+
+| Step 5 | Step 6 | Trades | Profit factor | Net | Drawdown | Per trade |
+|---|---|---|---|---|---|---|
+| `VIX.csv` | leader files | 54 | 1.35 | +$5,660 | $2,375 | +$105 |
+| platform series | off | 52 | 0.81 | −$3,845 | $7,005 | −$74 |
+| platform series | NQ vs `ES 09-26` | **17** | **1.73** | +$3,510 | $2,380 | +$206 |
+
+**The file and the platform series are not the same step 5.** This was predicted to barely
+move, on the reasoning that `^VIX` is the series the CSV holds. It moved a great deal:
+direction rejections went from 75 to 149, quiet-skips from 81 to 7, and the largest
+six-bar move the confirmation ever saw went from 0.81 to 2.66. Whatever the CSV contains,
+it is a materially quieter series than the feed's — which also explains the 81 quiet-skips
+that prompted the coverage checker in the first place. The prediction was wrong and the
+file, not the feed, is the suspect source.
+
+**`VIX` and `^VIX` appear to be the same data here.** The run made with the stock listing
+and the run made with the index produced near-identical step 5 statistics — mean six-bar
+move 0.18 against 0.17, and the same 2.66 maximum. An earlier note here blamed that run's
+collapse on confirming against the wrong instrument. That was almost certainly wrong: the
+difference was the file coming out, not the symbol changing. It is recorded because the
+mistake is instructive — the banner now names the source, and a source that *looks* wrong
+is not evidence that it *is*.
+
+**Relative strength is doing real work, on a sample too small to bank.** Against the same
+step 5, adding it moved 0.81 to 1.73 and turned −$3,845 into +$3,510. It also cut the run
+to 17 trades, rejecting 57 of the 86 setups it saw. Seventeen trades cannot separate 1.73
+from 1.35, and the configuration that earns the most total dollars is still the file-based
+one. What can be said is that the futures-only path is not obviously dead, which was the
+open question.
+
+**Two runs decompose the rest**, both from the feed-only baseline: `Breadth mode` off
+isolates step 5 on the platform series, and `Vix mode` off isolates relative strength.
+
 ---
 
 ## Risk settings
