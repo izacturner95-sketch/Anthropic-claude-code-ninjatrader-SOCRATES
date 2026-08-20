@@ -683,7 +683,7 @@ again.
 
 ---
 
-## Size does not scale, because the daily cap is in dollars and size is not
+## Size and the daily cap have to scale together
 
 The cash configuration at two contracts instead of one, everything else identical:
 
@@ -719,14 +719,36 @@ per trade both came in far below double, which is the fingerprint — the large-
 never submitted. Those are also where the outsized winners live, so raising size quietly
 converts the strategy into a tight-stop-only version of itself and then trades that version.
 
-**Scale the cap with the contract count**, or the runs do not compare: $1,500 at one contract
-is $3,000 at two. And if the account's real daily limit will not stretch that far, then the
-honest conclusion is that this stop band does not support that size — trade one contract, or
-use MNQ at ten micros per NQ with `Tick value ($)` set to 0.50, which reaches the same
-exposure in tenths and leaves the dollar arithmetic unchanged.
+**Scaling the cap with the contract count restores it exactly.** Two contracts against a
+$3,000 cap, against one contract at $1,500:
+
+| | 1ct @ $1,500 | 2ct @ $3,000 | Ratio |
+|---|---|---|---|
+| Setups / entries / trades | 244 / 135 / 135 | 244 / 135 / 135 | 1.000 |
+| Stop band, halted, budget rejections | 61 / 18 / 27 | 61 / 18 / 27 | 1.000 |
+| Profit factor | 1.85 | 1.85 | 1.000 |
+| Net | +$40,055 | +$80,110 | **2.000** |
+| Largest drawdown | $5,055 | $10,110 | **2.000** |
+| Largest loss | $1,315 | $2,630 | **2.000** |
+| Risk per trade, min / mean / max | $107.82 / $617.37 / $1,214.31 | $215.64 / $1,234.75 / $2,428.62 | **2.000** |
+
+Identical book, identical funnel, every dollar figure exactly doubled. Size is neutral once
+the cap scales with it, which is what it should have been all along — the earlier collapse
+was entirely the fixed cap, not the market.
+
+**So the rule is simply that `Max daily loss ($)` is a per-contract figure in disguise.**
+Set it as *(cap you want per contract) × contracts* and results stay comparable across
+sizes. If the account's real daily limit will not stretch that far, that is the binding
+constraint and it should be read as one: this stop band does not support that size. Trade
+one contract, or use MNQ at ten micros per NQ with `Tick value ($)` set to 0.50, which
+reaches the same exposure in tenths and leaves the dollar arithmetic unchanged.
 
 The startup banner now warns when a fresh day's budget cannot afford the full stop band at the
 configured size, and separately when it cannot afford even the minimum stop.
+
+**What scales with it is the loss, and that is the number a funded account is judged on.**
+At two contracts this configuration draws down $10,110 and its worst single trade is $2,630.
+Profit factor does not care about size; a trailing drawdown limit does.
 
 ---
 
