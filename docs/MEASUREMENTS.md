@@ -589,23 +589,31 @@ the same way, and neither has been isolated.
 
 The full configuration is committed as `templates/SocratesNQ - Cash session.xml`.
 
-### Level merge (ATR): inert
+### Isolating the ten changes, one at a time
 
-Reverted from 0.15 to 0.45 with `Min reward:risk` back at 1.2, so this is a single-parameter
-test against the baseline.
+Each row is a single parameter moved back to its old value against the same baseline, same
+window. The baseline is `Min reward:risk` 1.2, level merge 0.45, everything else as shipped.
 
-| | Merge 0.15 | Merge 0.45 |
-|---|---|---|
-| Sweeps | 14,730 | 14,736 |
-| Trades | 135 | 134 |
-| Profit factor | 1.85 | **1.86** |
-| Net | +$40,055 | +$39,950 |
-| Largest drawdown | $5,055 | $5,055 |
+| Parameter | Baseline | Reverted to | Sweeps | Trades | Profit factor | Net |
+|---|---|---|---|---|---|---|
+| — (baseline) | | | 14,736 | 134 | **1.86** | +$39,950 |
+| `Min reward:risk` | 1.2 | 1.0 / 0.8 / 0.6 | 14,730 | 135–140 | 1.93 / 1.84 / 1.83 | flat |
+| `Level merge (ATR)` | 0.45 | 0.15 | 14,730 | 135 | 1.85 | +$40,055 |
+| **`Swing strength`** | **4** | **6** | 14,705 | 125 | **1.68** | **+$32,275** |
 
-**No effect on anything.** Two of the ten parameters that moved together to produce the 1.85
-are now known not to matter — this and `Min reward:risk`. The result is still unattributed,
-and the remaining candidates are `Max bars to reclaim` 6 to 4, `Swing strength` 6 to 4, and
-`ATR period` 16 to 8, alongside the penetration change itself.
+**`Min reward:risk` and `Level merge` are inert.** Neither moves the result beyond noise, and
+level merge moves the sweep count by six in fourteen thousand.
+
+**`Swing strength` matters, and 4 is right.** Raising it to 6 costs 0.18 of profit factor and
+$7,675. It removes only nine trades — 134 to 125 — but nineteen percent of the profit, so the
+setups it drops are well above average. A stronger swing requirement needs six bars either
+side to confirm a pivot instead of four, which on 2-minute bars means the book only recognises
+structure after twenty-four minutes rather than sixteen. In a session where the whole edge is
+continuations off fresh breaks, that is too slow.
+
+**None of the three explains the sweep rate.** All three runs sit at one sweep per 3.4 bars.
+Whatever doubled it is among `Max bars to reclaim` 6 to 4, `ATR period` 16 to 8, or the
+penetration change itself — and the throughput argument above points at the first two.
 
 ### Minimum reward:risk: a plateau, not a gradient
 
