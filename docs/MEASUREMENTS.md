@@ -683,6 +683,50 @@ again.
 
 ---
 
+## The deeper penetration does not travel to the overnight session
+
+Overnight instance, reversals only, entries 18:00–09:00, step 5 on, 5-minute,
+2026-03-13 to 2026-08-18. Only the penetration threshold changed.
+
+| | 5 points / 0.05 ATR | 24 points / 0.07 ATR |
+|---|---|---|
+| Trades | 63 | 71 |
+| Profit factor | **1.93** | 1.28 |
+| Per trade | +$376 | +$131 |
+| Mean stop implied | ~164 ticks | **291 ticks** |
+| Largest stop implied | — | 1,253 ticks |
+| Largest drawdown | — | $9,895 |
+
+*(The 1.93 column is the overnight share of an all-hours run rather than a session-gated one,
+so it is indicative rather than exactly matched.)*
+
+**The mechanism is stops, and it is the mirror of why it works in cash.** Requiring 24 points
+of penetration means the sweep must travel further past the level before failing — and the
+stop sits below that extreme. Mean implied stop went from about 164 ticks to **291**, with
+half the book above 224 and a maximum of 1,253. Wider stops on the same targets is worse
+reward-to-risk, and the profit factor follows. In the cash session the same threshold buys
+selectivity cheaply because 24 points is an ordinary poke there; overnight it is a violent
+move, and the only sweeps that qualify are the ones that leave nowhere sensible to put a stop.
+
+**Keep the thresholds per-session:** 24 points in cash, 5 overnight. Along with 2-minute
+against 5-minute bars and continuations against reversals, that is now the third parameter
+the two sessions want set opposite ways.
+
+### Step 5 behaves differently here, and correctly
+
+The shadow figures are the reverse of the cash result. Step 5 refused 46 trades averaging
+**$76.85** and kept 25 averaging **$230.00** — it is selecting, keeping trades three times
+better than the ones it drops. In cash it refused trades averaging $303.96 against a book
+of $296.70 and was indistinguishable from random.
+
+The total-dollar reading and the per-trade reading disagree here, and both are true: running
+step 5 live gives 25 trades worth $5,750 in place of 71 worth $9,285. Better trades, fewer
+of them, less money. At 25 trades that is under the sixty-trade bar this document sets for
+believing anything, so it settles nothing on its own — but it is consistent with step 5
+earning its place overnight, which was measured separately at 1.71 to 1.96.
+
+---
+
 ## The cash configuration does not travel to 24 hours
 
 Same settings — 2-minute, 24-point penetration, continuations only — with the session opened
