@@ -136,7 +136,7 @@ its window. Full evidence in `docs/MEASUREMENTS.md`.
 |---|---|---|---|
 | `Min penetration (points)` | 5 | **24** | The headline change. A five-point poke through a level is noise, not a break. |
 | `Min penetration (ATR)` | 0.05 | 0.07 | Same idea, scaled. |
-| `Level merge (ATR)` | 0.45 | **0.15** | **The reason the sweep rate doubled.** Levels merge only when within 0.15 ATR, so the book holds far more distinct levels and price crosses one far more often. |
+| `Level merge (ATR)` | 0.45 | 0.15 | Measured as inert — reverting it moves the sweep count by 6 in 14,730 and the profit factor from 1.85 to 1.86. |
 | `Swing strength` | 6 | 4 | More swings qualify, adding more levels on top. |
 | `ATR period` | 16 | 8 | Shorter ATR, so every ATR-scaled distance shrinks — compounds the merge change. |
 | `Max stop (ticks)` | 200 | 245 | |

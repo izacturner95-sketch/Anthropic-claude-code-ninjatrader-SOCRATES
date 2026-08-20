@@ -574,16 +574,38 @@ changes what counts as a broken level: price poking five points through a level 
 is not a break, it is noise, and the original threshold was treating the two the same. That
 is a claim about the setup, not a filter applied after the fact.
 
-**The sweep rate also doubled** — one per 3.3 bars against one per 5.8 — which a *higher*
-penetration threshold cannot cause on its own. The template has since been recovered and
-the cause is `Level merge (ATR)` falling from 0.45 to **0.15**: levels only merge when
-within 0.15 ATR of each other, so the book holds far more distinct levels and price crosses
-one far more often. `Swing strength` 6 to 4 adds more swing levels on top, and `ATR period`
-16 to 8 shortens the ATR, which shrinks every ATR-scaled distance and compounds the merge
-effect. The run summary's own note — *level count, not penetration depth, is what drives the
-rate* — was pointing at it the whole time.
+**The sweep rate also doubled** — one per 3.4 bars against one per 5.8 — which a *higher*
+penetration threshold should not cause. `Level merge (ATR)` was named here as the cause and
+**that was wrong**: reverting it from 0.15 back to 0.45 moved the sweep count from 14,730 to
+14,736, a difference of six, and the result from 1.85 to 1.86. It explains neither.
+
+The likelier explanation is the one the deeper penetration itself produces. A candidate
+occupies the detector's single slot per side until it either reclaims the level or runs out
+of bars. Requiring 24 points of penetration means only decisive pokes start a candidate at
+all — and a decisive poke is *less* likely to come back, so more candidates exhaust the clock
+and emit a continuation instead of resolving as a reclaim. `Max bars to reclaim` falling from
+6 to 4 shortens that clock, freeing the slot faster and raising throughput again. Both push
+the same way, and neither has been isolated.
 
 The full configuration is committed as `templates/SocratesNQ - Cash session.xml`.
+
+### Level merge (ATR): inert
+
+Reverted from 0.15 to 0.45 with `Min reward:risk` back at 1.2, so this is a single-parameter
+test against the baseline.
+
+| | Merge 0.15 | Merge 0.45 |
+|---|---|---|
+| Sweeps | 14,730 | 14,736 |
+| Trades | 135 | 134 |
+| Profit factor | 1.85 | **1.86** |
+| Net | +$40,055 | +$39,950 |
+| Largest drawdown | $5,055 | $5,055 |
+
+**No effect on anything.** Two of the ten parameters that moved together to produce the 1.85
+are now known not to matter — this and `Min reward:risk`. The result is still unattributed,
+and the remaining candidates are `Max bars to reclaim` 6 to 4, `Swing strength` 6 to 4, and
+`ATR period` 16 to 8, alongside the penetration change itself.
 
 ### Minimum reward:risk: a plateau, not a gradient
 
