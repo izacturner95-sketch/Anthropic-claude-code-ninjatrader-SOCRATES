@@ -180,8 +180,42 @@ each overnight. Excluding them lifts the run from 1.47 to **1.93** and adds $6,6
 largest single improvement available here, and it requires no new belief about anything.
 The cash session's own five-month test independently returned 0.91 unfiltered.
 
-`TradingHoursMode.Custom` handles a window that wraps midnight, so this is three settings:
-`Session start` 180000, `Session end` 090000, `Flatten` 092500.
+`TradingHoursMode.Custom` handles a window that wraps midnight. **But see below — the
+obvious way to configure it is wrong.**
+
+### Not entering during cash is not the same as not holding into it
+
+Acting on the above with `Session start` 180000, `Session end` 090000, `Flatten` 092500 made
+the result worse, not better. Same window as the 2.72 run, step 5 on, cash entries now zero:
+
+| | Cash included | Cash excluded, flatten 09:25 |
+|---|---|---|
+| Trades | 46 | 41 |
+| Profit factor | **2.72** | 2.07 |
+| Net | +$29,590 | +$16,425 |
+| Best trade | **+15.97R** | +7.14R |
+| Overnight net | $28,340 | $16,425 |
+
+Overnight entries barely moved — 42 to 41 — while overnight net fell by $11,915. The best
+trade in the book disappeared and two of the four trades above +5R went with it.
+
+**A flatten time truncates winners that were entered overnight and needed the cash session
+to reach target.** The session gate stopped the losing cash *entries*, which was the point,
+and the flatten window silently also stopped every overnight position from running past
+09:25 — which was not. Those are two different decisions and one setting was doing both.
+
+The correct configuration keeps the entry restriction and removes the flatten:
+
+| Setting | Value |
+|---|---|
+| `Trading hours` | `Custom` |
+| `Session start` | `180000` |
+| `Session end` | `090000` |
+| `Flatten` | **`180000`** — equal to `Session start`, which disables the flatten window |
+
+`IsExitOnSessionCloseStrategy` still closes anything open at the daily session boundary, so
+nothing is left running indefinitely. Untested as of writing: the prediction is roughly the
+42 trades and $28,340 of the 2.72 run's overnight half, without its four cash entries.
 
 **One risk note.** The largest single loss was $1,705 against a 200-tick cap worth $1,000 —
 341 ticks, well past the stop. Twenty-two of 78 trades overran 1R, worst −2.46R, costing
