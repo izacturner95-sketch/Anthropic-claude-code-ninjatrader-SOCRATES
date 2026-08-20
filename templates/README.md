@@ -76,21 +76,33 @@ Kept from the overnight configuration, worth knowing you are running:
 
 ---
 
-## This is a starting point, not a configuration
+## Where this stands
 
-**The cash session was unprofitable across four runs.** These settings encode what those
-runs established so exploration starts from the best-understood point — not because the
-result is expected to be positive.
+**Breakeven.** The first run of this template over 2026-06-17 to 2026-08-18 returned
+profit factor 1.02, +$290 over 52 trades, $5,455 of drawdown. Four earlier cash runs had
+topped out at 0.59 with what looked like a −0.07R ceiling; that ceiling claim was wrong.
+
+Not tradeable at 1.02 — but no longer a dead line of work either. Full numbers in
+`docs/MEASUREMENTS.md`.
 
 ### Already settled — do not spend runs on these
 
-Recorded with the numbers in `docs/MEASUREMENTS.md`.
-
 - **`Min stop (ticks)`** at 20, 75 and 100 gave identical expectancy. The worst trade
   halved from −4.02R to −1.99R and the mean did not move at all.
-- **Reversals in cash** — profit factor 0.40 over 23 trades.
-- **Anything resting on stops holding.** With stops that never slipped, the best cash run
-  is −0.07R. Breakeven is the ceiling there, not the floor.
+- **Stop overruns.** Six of 52 trades lost more than 1R, worth 0.06R a trade. Real, small,
+  and not what stands between this and profit.
 
-The open question is whether a different **premise** works in the cash session, not whether
-a different parameter does. Four runs answered the parameter question.
+### Open, in order of how much they move
+
+1. **Step 5 and step 6, one at a time.** Together they reject 127 of 197 setups here and
+   neither was ever validated on the cash session. Largest untested lever in the run.
+2. **Reversals off.** Four reversal trades lost $1,895 while 48 continuations made $2,185,
+   putting continuations alone at 1.14. Four trades is not a sample, so use the
+   `Trade reversals` switch and measure it rather than subtracting.
+3. **`Max stop (ticks)` below 200.** Half the completed setups implied a stop of 124 ticks
+   or less; the band only rejected 12. The overnight sweep was monotonic toward tighter.
+
+One thing worth checking before reading step 5's cash numbers at all: 74 setups auto-passed
+it as "source quiet," meaning the VIX file was more than 15 minutes stale during cash
+hours, when the index is live. Either the download has gaps or the age limit is solving an
+overnight problem in a session that does not have it.

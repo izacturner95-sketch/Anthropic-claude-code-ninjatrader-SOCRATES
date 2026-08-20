@@ -177,7 +177,7 @@ Settled. Off.
 
 ---
 
-## The cash session, and why it was abandoned
+## The cash session: four runs that looked decisive
 
 A second instance was set up for regular hours only: 2-minute bars, `Trading hours`
 Regular, otherwise the tuned configuration. Same window, 2026-06-17 to 2026-08-19.
@@ -218,13 +218,64 @@ not enough: 0.90 is near breakeven, not above it.
 run would be −0.07R. Removing every overrun — which no live account can — reaches nothing
 rather than profit. That is what closed the question.
 
-Four runs, decisive. **This is an overnight strategy.** Knowing where an edge lives is
-worth as much as finding it, and it was learned for the cost of a few evenings rather than
-a funded account.
+Four runs, and at the time this read as decisive. It was not — see the run below, which
+reached breakeven and changed the conclusion. What survives from these four is the
+diagnosis, not the verdict: the 2-minute fix, the minimum stop being inert, and
+continuations being the cash session's earner. All three held up.
 
-One temptation worth naming and refusing: continuations at 0.90 over 20 trades look close
-enough that a tighter filter might push them over 1.0. At that sample size, finding one
-would be fitting, not measuring.
+---
+
+## The cash session, reconsidered
+
+The four runs above shared a flaw worth naming: they varied one parameter at a time
+against a configuration that had not been ported. Loading the whole overnight
+configuration and changing the session produced a materially different result.
+
+**Run: cash template, 2026-06-17 to 2026-08-18, 2-minute bars, `NQ 09-26`, slippage 1.**
+
+| | |
+|---|---|
+| Trades | 52 (18 won, 35%) |
+| Net | +$290 |
+| Profit factor | **1.02** |
+| Per trade | +$5.58 |
+| Largest drawdown | $5,455 |
+| Mean R | −0.04 (risk varies 6x, so read the dollars) |
+
+Breakeven, not profit. But the previous best was 0.59 with a −0.07R *ceiling*, and this
+run cleared it with real stops rather than perfect ones. The ceiling claim was wrong.
+
+**The split is now extreme:**
+
+| Setup kind | Trades | Win rate | Profit factor | Per trade |
+|---|---|---|---|---|
+| Reversals | 4 | 25% | 0.12 | −$474 |
+| Continuations | 48 | 35% | **1.14** | +$46 |
+
+Four reversal trades lost $1,895 while 48 continuations made $2,185. The direction agrees
+with the earlier runs and the magnitude is larger. **Four trades is not a sample** — the
+finding here is that continuations alone are above 1.0, which the 20-trade sample could
+not establish. `Trade reversals` was added as a switch so this can be tested rather than
+inferred by subtraction.
+
+**Detection is now proportionate and correctly gated.** Cash took 29% of sweeps, 26% of
+shifts and 29% of retests against ~29% of bars, and produced 100% of setups — the overnight
+hours generated 8,037 sweeps and zero setups, so the session gate is doing exactly its job.
+
+**The confirmations are removing 64% of setups, unmeasured.** Of 197 completed setups,
+step 5 rejected 70 and step 6 rejected 57, leaving 52 entries. Both were validated on the
+overnight session and neither has been tested here. That is the largest untested lever in
+the run and the obvious next experiment.
+
+**Step 5 auto-passed 74 setups as "source quiet."** With `Vix max data age` at 15 minutes
+and the index only trading 09:30–16:15, 39% of cash setups skipped step 5 entirely. During
+cash hours the VIX file should be current, so this is either gaps in the downloaded data
+or a threshold set for the overnight problem being applied where that problem does not
+exist. Worth checking before reading anything into step 5's cash numbers.
+
+**Stop overruns cost 0.06R a trade.** Six of 52 trades lost more than 1R, worst −2.96R.
+Perfect stops would give +0.02R against the actual −0.04R. Smaller than overnight, as
+expected in a liquid session, and not the thing standing between this and profit.
 
 ---
 

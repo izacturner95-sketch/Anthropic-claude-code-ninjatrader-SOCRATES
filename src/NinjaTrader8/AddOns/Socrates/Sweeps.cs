@@ -79,6 +79,16 @@ namespace Socrates.Market
 		public bool EmitContinuations = false;
 
 		/// <summary>
+		/// Report a candidate that reclaimed the level as a reversal sweep.
+		///
+		/// On by default - this is the original setup and the one the overnight session is
+		/// built on. It exists as a switch because the cash session inverts: continuations
+		/// earn there and reversals lose, so testing one kind alone needs both switches, not
+		/// just the continuation one.
+		/// </summary>
+		public bool EmitReversals = true;
+
+		/// <summary>
 		/// Only report a continuation when the level broken is a major reference - prior day
 		/// or week, a pivot, the overnight or opening range - rather than any swing or order
 		/// block in the book.
@@ -181,14 +191,17 @@ namespace Socrates.Market
 
 				if (close < buySide.Level.Price)
 				{
-					buyResult.IsValid = true;
-					buyResult.Side = SweepSide.BuySide;
-					buyResult.Level = buySide.Level;
-					buyResult.ExtremePrice = buySide.Extreme;
-					buyResult.ExtremeBarIndex = buySide.ExtremeBarIndex;
-					buyResult.ConfirmBarIndex = barIndex;
-					buyResult.ConfirmTime = time;
-					buyResult.PenetrationPoints = buySide.Extreme - buySide.Level.Price;
+					if (settings.EmitReversals)
+					{
+						buyResult.IsValid = true;
+						buyResult.Side = SweepSide.BuySide;
+						buyResult.Level = buySide.Level;
+						buyResult.ExtremePrice = buySide.Extreme;
+						buyResult.ExtremeBarIndex = buySide.ExtremeBarIndex;
+						buyResult.ConfirmBarIndex = barIndex;
+						buyResult.ConfirmTime = time;
+						buyResult.PenetrationPoints = buySide.Extreme - buySide.Level.Price;
+					}
 
 					buySide = default(Candidate);
 				}
@@ -250,14 +263,17 @@ namespace Socrates.Market
 
 				if (close > sellSide.Level.Price)
 				{
-					sellResult.IsValid = true;
-					sellResult.Side = SweepSide.SellSide;
-					sellResult.Level = sellSide.Level;
-					sellResult.ExtremePrice = sellSide.Extreme;
-					sellResult.ExtremeBarIndex = sellSide.ExtremeBarIndex;
-					sellResult.ConfirmBarIndex = barIndex;
-					sellResult.ConfirmTime = time;
-					sellResult.PenetrationPoints = sellSide.Level.Price - sellSide.Extreme;
+					if (settings.EmitReversals)
+					{
+						sellResult.IsValid = true;
+						sellResult.Side = SweepSide.SellSide;
+						sellResult.Level = sellSide.Level;
+						sellResult.ExtremePrice = sellSide.Extreme;
+						sellResult.ExtremeBarIndex = sellSide.ExtremeBarIndex;
+						sellResult.ConfirmBarIndex = barIndex;
+						sellResult.ConfirmTime = time;
+						sellResult.PenetrationPoints = sellSide.Level.Price - sellSide.Extreme;
+					}
 
 					sellSide = default(Candidate);
 				}

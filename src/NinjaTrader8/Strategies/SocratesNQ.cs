@@ -387,6 +387,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				EnableContinuations = false;
 				ContinuationsOnMajorLevelsOnly = true;
 
+				// On, because the reclaim setup is what the overnight session earns from.
+				// The switch exists for the cash session, where it is the losing half.
+				EnableReversals = true;
+
 				// --- Step 3: structure ---
 				//
 				// A post-sweep swing needs (2 x SwingStrength) + 1 bars to confirm, so the
@@ -579,6 +583,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 						MinPenetrationAtr = MinPenetrationAtr,
 						MinPenetrationPoints = MinPenetrationPoints,
 						MaxBarsToReclaim = MaxBarsToReclaim,
+						EmitReversals = EnableReversals,
 						EmitContinuations = EnableContinuations,
 						ContinuationsOnMajorLevelsOnly = ContinuationsOnMajorLevelsOnly
 					},
@@ -2304,6 +2309,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Continuations: {0}", EnableContinuations
 				? (ContinuationsOnMajorLevelsOnly ? "on, major levels only" : "on, any level in the book")
 				: "off"));
+			Print(string.Format("  Reversals    : {0}", EnableReversals ? "on" : "off"));
 			Print(string.Format("  Levels       : zone half-width {0:N2} ATR, merge within {1:N2} ATR, opening range {2} min",
 				ZoneHalfWidthAtr, LevelMergeAtr, OpeningRangeMinutes));
 			Print(string.Format("  Structure    : swing strength {0}, displacement {1:N2} ATR, max setup risk {2:N2} ATR, {3} bars to shift",
@@ -3725,6 +3731,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[NinjaScriptProperty]
 		[Display(Name = "Trade continuations", Description = "Also trade breaks that hold: price goes through a level, does not reclaim, then retests it from the other side and carries on. Measured at -0.08R over 147 trades in its unselective form, so it ships off.", GroupName = "4. Step 2 - Liquidity", Order = 3)]
 		public bool EnableContinuations { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Trade reversals", Description = "Trade the reclaim: price pushes through a level, fails, and closes back inside. This is the original setup and the overnight session's earner - $455 a trade there, against continuations losing money. In the cash session it inverts, so turn it off to test continuations alone.", GroupName = "4. Step 2 - Liquidity", Order = 2)]
+		public bool EnableReversals { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Continuations on major levels only", Description = "Restrict continuations to prior day and week levels, pivots, the overnight and opening ranges - not swings or order blocks. With every level eligible, a break fired every seven bars and meant nothing.", GroupName = "4. Step 2 - Liquidity", Order = 4)]
