@@ -5,7 +5,8 @@ Two ready-to-load templates:
 | File | For |
 |---|---|
 | `SocratesNQ - Overnight.xml` | The tuned overnight configuration, saved out of NinjaTrader. Also the schema reference. |
-| `SocratesNQ - Cash session.xml` | A starting point for the regular-hours session. Read the warning at the bottom before running it. |
+| `SocratesNQ - Cash session.xml` | Regular hours. The measured configuration — profit factor 1.35 — but it reads files. |
+| `SocratesNQ - Cash session (feed only).xml` | The same, with every source on the platform feed. Nothing measured yet. |
 
 ## Installing one
 
@@ -44,6 +45,40 @@ differs.
 properties exist in the current source; the overnight file was saved from a build that
 predates them. Older builds ignore XML elements they do not recognise, so it loads either
 way.
+
+---
+
+## The feed-only variant
+
+`SocratesNQ - Cash session (feed only).xml` is the cash configuration with both external
+sources moved onto instruments the platform carries:
+
+| | Cash session | Feed only |
+|---|---|---|
+| `Vix symbol` | `VIX` | **`VX 08-26`** |
+| `Vix file` | a CSV path | **empty** |
+| `Breadth source` | `Leaders` | **`RelativeStrength`** |
+| `Comparison symbol` | — | **`ES 09-26`** |
+| `Leader files` | seven CSV paths | **empty** |
+
+Everything else is identical.
+
+**Why these two.** A prop feed is a futures feed. It does not carry cash equities, and
+NinjaTrader's `VIX` instrument is a stock listing rather than the index — a step 5 pointed
+at it confirms against the wrong thing and nothing in the output looks wrong. `VX` is the
+VIX futures contract and `ES` is the S&P 500 future, so both sides of both confirmations
+are instruments the live account can actually see. Relative strength reads NQ against ES:
+the Nasdaq-100 is roughly half Magnificent 7 by weight and the S&P 500 is not, so the
+spread between their moves is a continuous reading of whether big tech is leading.
+
+**The contract months are hard-coded and will go stale.** `VX 08-26` and `ES 09-26` are
+correct for a backtest ending 2026-08-18. Change both at every roll, and remember that
+NinjaTrader does not carry the previous contract's history forward — a backtest reaching
+back past a roll loses the confirmation data, which is what produced the earlier runs
+where steps 5 and 6 silently had nothing to read.
+
+**Nothing here is measured.** Against the 1.35 baseline this moves two variables at once.
+See the run order below.
 
 ---
 
@@ -107,12 +142,15 @@ Full numbers in `docs/MEASUREMENTS.md`.
 
 ### Open, in order of how much they move
 
-1. **Making step 6 live.** It rejects 66 setups on file data that does not exist in real
-   time. Run `Breadth mode` = Off and `Breadth source` = RelativeStrength against the
-   current baseline; those are the only two forms that survive without stock data.
-2. **`Max stop (ticks)` below 200.** Half the completed setups implied a stop of 124 ticks
+1. **Whether the feed-only variant holds 1.35.** Two runs: the template as it ships, and
+   the same with `Breadth mode` = Off. If either is close to 1.35, the file dependency is
+   gone and this becomes a configuration that can actually be traded.
+2. **If both disappoint, isolate.** The variant moves step 5 and step 6 together. Change
+   only `Vix symbol` to `VX 08-26` and clear `Vix file`, leaving the leader files in place
+   — that says which of the two sources cost the difference.
+3. **`Max stop (ticks)` below 200.** Half the completed setups implied a stop of 124 ticks
    or less; the band only rejected 15. The overnight sweep was monotonic toward tighter.
-3. **Out-of-sample.** 1.35 was found by looking at this window. Nothing else settles it.
+4. **Out-of-sample.** 1.35 was found by looking at this window. Nothing else settles it.
 
 One thing worth checking before reading step 5's numbers at all: 81 setups auto-passed it
 as "source quiet," meaning the VIX file was more than 15 minutes stale during cash hours,

@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<StrategyTemplate>
+  <StrategyType>NinjaTrader.NinjaScript.Strategies.SocratesNQ</StrategyType>
+  <Strategy>
+    <SocratesNQ xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <IsVisible>true</IsVisible>
+      <calculate2>OnBarClose</calculate2>
+      <AreLinesConfigurable>true</AreLinesConfigurable>
+      <ArePlotsConfigurable>true</ArePlotsConfigurable>
+      <BarsPeriodSerializable>
+        <BarsPeriodTypeSerialize>4</BarsPeriodTypeSerialize>
+        <BaseBarsPeriodType>Minute</BaseBarsPeriodType>
+        <BaseBarsPeriodValue>1</BaseBarsPeriodValue>
+        <VolumetricDeltaType>BidAsk</VolumetricDeltaType>
+        <MarketDataType>Last</MarketDataType>
+        <PointAndFigurePriceType>Close</PointAndFigurePriceType>
+        <ReversalType>Tick</ReversalType>
+        <Value>2</Value>
+        <Value2>1</Value2>
+      </BarsPeriodSerializable>
+      <BarsToLoad>0</BarsToLoad>
+      <Calculate>OnBarClose</Calculate>
+      <Displacement>0</Displacement>
+      <DisplayInDataBox>true</DisplayInDataBox>
+      <From>2026-06-18T00:00:00</From>
+      <IsAutoScale>true</IsAutoScale>
+      <Lines />
+      <MaximumBarsLookBack>TwoHundredFiftySix</MaximumBarsLookBack>
+      <Name>SocratesNQ</Name>
+      <Panel>-1</Panel>
+      <Plots />
+      <ScaleJustification>Right</ScaleJustification>
+      <ShowTransparentPlotsInDataBox>false</ShowTransparentPlotsInDataBox>
+      <To>2026-08-18T00:00:00</To>
+      <IsDataSeriesRequired>true</IsDataSeriesRequired>
+      <IsOverlay>true</IsOverlay>
+      <SelectedValueSeries>0</SelectedValueSeries>
+      <Gtd>1800-01-01T00:00:00</Gtd>
+      <Template />
+      <TimeInForce>Gtc</TimeInForce>
+      <BacktestCommissionTemplate />
+      <BarsPeriodParameter>
+        <Increment>1</Increment>
+        <Max xsi:type="xsd:int">0</Max>
+        <Min xsi:type="xsd:int">0</Min>
+        <Name />
+        <ParameterTypeSerializable>System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</ParameterTypeSerializable>
+        <ValueSerializable>0</ValueSerializable>
+      </BarsPeriodParameter>
+      <BarsRequiredToTrade>30</BarsRequiredToTrade>
+      <Category>Backtest</Category>
+      <ConnectionLossHandling>Recalculate</ConnectionLossHandling>
+      <DaysToLoad>5</DaysToLoad>
+      <DefaultQuantity>1</DefaultQuantity>
+      <DisconnectDelaySeconds>10</DisconnectDelaySeconds>
+      <EntriesPerDirection>1</EntriesPerDirection>
+      <EntryHandling>AllEntries</EntryHandling>
+      <ExitOnSessionCloseSeconds>30</ExitOnSessionCloseSeconds>
+      <IncludeCommission>false</IncludeCommission>
+      <InstrumentOrInstrumentList>NQ 09-26</InstrumentOrInstrumentList>
+      <IsAggregated>false</IsAggregated>
+      <IsExitOnSessionCloseStrategy>true</IsExitOnSessionCloseStrategy>
+      <IsFillLimitOnTouch>false</IsFillLimitOnTouch>
+      <IsOptimizeDataSeries>false</IsOptimizeDataSeries>
+      <IsStableSession>true</IsStableSession>
+      <IsTickReplay>false</IsTickReplay>
+      <IsTradingHoursBreakLineVisible>true</IsTradingHoursBreakLineVisible>
+      <IsWaitUntilFlat>false</IsWaitUntilFlat>
+      <NumberRestartAttempts>4</NumberRestartAttempts>
+      <OptimizationPeriod>10</OptimizationPeriod>
+      <OrderFillResolution>Standard</OrderFillResolution>
+      <OrderFillResolutionType>Minute</OrderFillResolutionType>
+      <OrderFillResolutionValue>1</OrderFillResolutionValue>
+      <RestartsWithinMinutes>5</RestartsWithinMinutes>
+      <SetOrderQuantity>Strategy</SetOrderQuantity>
+      <Slippage>1</Slippage>
+      <StartBehavior>WaitUntilFlat</StartBehavior>
+      <StopTargetHandling>PerEntryExecution</StopTargetHandling>
+      <SupportsOptimizationGraph>true</SupportsOptimizationGraph>
+      <TestPeriod>28</TestPeriod>
+      <TradingHoursSerializable />
+      <DrawOnPricePanel>false</DrawOnPricePanel>
+      <ZOrder>-2147483648</ZOrder>
+      <FixedContracts>1</FixedContracts>
+      <MaxContracts>1</MaxContracts>
+      <TickValueDollars>5</TickValueDollars>
+      <UseConfidenceSizing>false</UseConfidenceSizing>
+      <FillResolutionMinutes>1</FillResolutionMinutes>
+      <TradingHours>Custom</TradingHours>
+      <SessionStartTime>93000</SessionStartTime>
+      <SessionEndTime>154500</SessionEndTime>
+      <FlattenTime>155500</FlattenTime>
+      <MaxDailyLossDollars>1500</MaxDailyLossDollars>
+      <DailyProfitTargetDollars>0</DailyProfitTargetDollars>
+      <StopForDayOnProfitTarget>false</StopForDayOnProfitTarget>
+      <MaxTradesPerDay>0</MaxTradesPerDay>
+      <MaxConsecutiveLosses>2</MaxConsecutiveLosses>
+      <CarryReplayRiskState>false</CarryReplayRiskState>
+      <AtrPeriod>16</AtrPeriod>
+      <SwingStrength>6</SwingStrength>
+      <UseFourHourPivots>true</UseFourHourPivots>
+      <OpeningRangeMinutes>15</OpeningRangeMinutes>
+      <ZoneHalfWidthAtr>0.15</ZoneHalfWidthAtr>
+      <LevelMergeAtr>0.45</LevelMergeAtr>
+      <UseOrderBlocks>true</UseOrderBlocks>
+      <OrderBlockRequireImbalance>true</OrderBlockRequireImbalance>
+      <OrderBlockDisplacementAtr>1</OrderBlockDisplacementAtr>
+      <OrderBlockMaxLookback>10</OrderBlockMaxLookback>
+      <OrderBlockZone>Body</OrderBlockZone>
+      <MinPenetrationAtr>0.05</MinPenetrationAtr>
+      <MinPenetrationPoints>5</MinPenetrationPoints>
+      <MaxBarsToReclaim>6</MaxBarsToReclaim>
+      <EnableReversals>false</EnableReversals>
+      <EnableContinuations>true</EnableContinuations>
+      <ContinuationsOnMajorLevelsOnly>false</ContinuationsOnMajorLevelsOnly>
+      <MaxBarsSweepToShift>45</MaxBarsSweepToShift>
+      <UsePostSweepSwing>false</UsePostSweepSwing>
+      <MaxSetupRiskAtr>0</MaxSetupRiskAtr>
+      <MaxStructureDistanceAtr>4.5</MaxStructureDistanceAtr>
+      <MinDisplacementAtr>1.2</MinDisplacementAtr>
+      <MaxBarsShiftToRetest>15</MaxBarsShiftToRetest>
+      <ZoneMode>BrokenStructure</ZoneMode>
+      <RetestZoneAtr>0.3</RetestZoneAtr>
+      <RequireConfirmationClose>true</RequireConfirmationClose>
+      <StopBufferAtr>0.25</StopBufferAtr>
+      <TargetBufferTicks>4</TargetBufferTicks>
+      <MinRewardRisk>1</MinRewardRisk>
+      <TargetRMultiple>2</TargetRMultiple>
+      <MinStopTicks>20</MinStopTicks>
+      <MaxStopTicks>200</MaxStopTicks>
+      <VixMode>Directional</VixMode>
+      <VixSymbol>VX 08-26</VixSymbol>
+      <VixBarMinutes>5</VixBarMinutes>
+      <VixLookbackBars>6</VixLookbackBars>
+      <VixMinDirectionalMove>0.02</VixMinDirectionalMove>
+      <VixMinDirectionalMoveAtr>0.5</VixMinDirectionalMoveAtr>
+      <VixKeyLevelTolerance>0.35</VixKeyLevelTolerance>
+      <VixMaxDataAgeMinutes>15</VixMaxDataAgeMinutes>
+      <VixSkipWhenQuiet>true</VixSkipWhenQuiet>
+      <VixFile />
+      <BreadthMode>Directional</BreadthMode>
+      <BreadthSource>RelativeStrength</BreadthSource>
+      <RelativeStrengthSymbol>ES 09-26</RelativeStrengthSymbol>
+      <RelativeStrengthLookback>12</RelativeStrengthLookback>
+      <RelativeStrengthMinSpread>0.02</RelativeStrengthMinSpread>
+      <RelativeStrengthMultiple>0.75</RelativeStrengthMultiple>
+      <BreadthSymbols>AAPL,MSFT,NVDA,AMZN,META,GOOGL,TSLA</BreadthSymbols>
+      <BreadthBarMinutes>5</BreadthBarMinutes>
+      <BreadthMinAligned>3</BreadthMinAligned>
+      <BreadthMinMovePercent>0.3</BreadthMinMovePercent>
+      <BreadthMaxDataAgeMinutes>0</BreadthMaxDataAgeMinutes>
+      <BreadthActiveStart>93000</BreadthActiveStart>
+      <BreadthActiveEnd>160000</BreadthActiveEnd>
+      <LeaderFiles />
+      <FileReloadSeconds>60</FileReloadSeconds>
+      <FileTimeOffsetMinutes>0</FileTimeOffsetMinutes>
+      <ShowChartVisuals>true</ShowChartVisuals>
+      <ShowSetupZones>true</ShowSetupZones>
+      <ShowStatsPanel>true</ShowStatsPanel>
+      <ShadowConfirmations>false</ShadowConfirmations>
+      <EnableLogging>true</EnableLogging>
+      <VerboseLogging>false</VerboseLogging>
+      <StatusEveryBars>12</StatusEveryBars>
+    </SocratesNQ>
+  </Strategy>
+</StrategyTemplate>
