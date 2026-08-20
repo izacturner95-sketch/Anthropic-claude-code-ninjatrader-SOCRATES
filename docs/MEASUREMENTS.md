@@ -374,32 +374,53 @@ open question.
 
 | Step 5 | Step 6 | Trades | Profit factor | Net | Drawdown |
 |---|---|---|---|---|---|
-| `VIX.csv` | leader files | 54 | 1.35 | +$5,660 | $2,375 |
+| **off** | **off** | **95** | **0.96** | **−$1,490** | **$9,340** |
 | feed | off | 52 | 0.81 | −$3,845 | $7,005 |
 | off | NQ vs ES | 26 | 0.95 | −$485 | $3,970 |
-| feed | NQ vs ES | 17 | **1.73** | +$3,510 | $2,380 |
-| **off** | **off** | **not run** | | | |
+| feed | NQ vs ES | 17 | 1.73 | +$3,510 | $2,380 |
+| `VIX.csv` | leader files | 54 | 1.35 | +$5,660 | $2,375 |
 
-**Neither confirmation is profitable alone, and together they are 1.73.** Step 5 by itself
-loses money. Relative strength by itself loses money. Applied together they produce the
-best profit factor in the table, on the smallest sample in the table. That combination —
-two ingredients that fail separately, succeeding jointly on 17 observations — is what
-overfitting looks like from the inside. It is not proof of overfitting; genuine
-complementary filters exist. It is a reason to stop reading the number as a finding.
+Read the first row first. It is the largest sample here and the only one that is not a
+subtraction from something unmeasured.
 
-**The baseline has never been run.** Every cell above is a *subtraction* from a population
-nobody has measured. With both confirmations off the cash session would produce roughly two
-hundred trades — four times the largest sample here and the only run in this whole exercise
-with enough observations to mean much on its own. Until it exists there is no answer to the
-question every row above is implicitly claiming: does filtering help at all?
+**The unfiltered cash session is breakeven: 0.96 over 95 trades.** That is the signal
+everything else has been trying to rescue. It is not an edge with a data problem; it is not
+an edge.
 
-That is the next run, and it outranks any further tuning.
+**Step 5 on the platform series is actively harmful.** It removes 43 trades and takes 0.96
+down to 0.81. Every version of "step 5 helps" in this document was measured on the overnight
+session, where it does. In cash it costs money.
 
-**A note on relative strength's threshold.** It rejected 183 of 230 setups, and the mean
-spread (0.063%) sits just *below* the mean threshold (0.067%) — so more than half the time
-the two indices have not diverged enough for the test to pass at `Min spread (multiple)`
-0.75. That is a tunable, and tuning it against this window before the baseline exists would
-be fitting a filter to noise.
+**Relative strength does nothing to the edge.** 0.95 against a 0.96 baseline, on a third of
+the trades. What it does do is cut drawdown from $9,340 to $3,970 — real, but that is
+exposure reduction, available for free by trading smaller, and not a reason to believe the
+filter knows anything.
+
+**So the 1.73 is two filters that individually do nothing and harm, combining on 17
+observations to produce the best number in the table.** Before the baseline existed that
+was a reason for caution. With it, the honest reading is noise. Nothing should be built on
+that cell.
+
+**And the 1.35 needs re-reading too.** It beats the baseline on 54 trades, which is the
+only claim in this table that still stands up — but it depends on leader files that cannot
+be supplied live, and it has never been tested outside this window.
+
+### What the baseline makes possible
+
+With both confirmations off, **the backtest is no longer limited by confirmation data.**
+Every short window in this document — two months, one contract — was short because step 5
+and step 6 needed VX, leader or file history that does not survive a contract roll. Nothing
+constrains an unfiltered run except NQ's own bars.
+
+That turns the real question from "which filter rescues this" into one that can actually be
+answered: **run the unfiltered configuration over twelve months.** Three to six hundred
+trades instead of ninety-five, across more than one regime. If the raw continuation
+sequence is breakeven there too, the cash session is finished and no filter search on two
+months of data was ever going to change that. If it is meaningfully above 1.0, then there
+is something real to filter and this whole exercise starts again on a sample that can carry
+it.
+
+More filters on this window cannot settle anything. More window can.
 
 ---
 
