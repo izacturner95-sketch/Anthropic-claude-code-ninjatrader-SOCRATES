@@ -585,36 +585,32 @@ rate* — was pointing at it the whole time.
 
 The full configuration is committed as `templates/SocratesNQ - Cash session.xml`.
 
-### Minimum reward:risk 1.2 to 1.0
+### Minimum reward:risk: a plateau, not a gradient
 
-Same window, same everything else. **Identical trade population** — 135 trades, 244 setups,
-the same risk-per-trade range and the same best and worst trades — because this parameter
-was not rejecting anything here. Its only effect was which target each setup used.
+Four values, same window, same everything else. This parameter rejected nothing at any
+setting — the `discarded, reward below R` line never appeared — so its only effect was which
+target each setup used.
 
-| | 1.2 | **1.0** |
-|---|---|---|
-| Targets from a previous swing | 586 | **595** |
-| Targets from the R fallback | 46 | **37** |
-| Wins | 55 (41%) | **58 (43%)** |
-| Gross wins | $87,145 | $87,315 |
-| Gross losses | $47,090 | **$45,320** |
-| Net | +$40,055 | **+$41,995** |
-| Profit factor | 1.85 | **1.93** |
-| Largest drawdown | $5,055 | **$4,830** |
+| Min R:R | Trades | Win rate | Gross wins | Gross losses | Net | Profit factor | Drawdown | Swing / fallback targets | Sub-1R wins |
+|---|---|---|---|---|---|---|---|---|---|
+| 1.2 | 135 | 41% | $87,145 | $47,090 | +$40,055 | 1.85 | $5,055 | 586 / 46 | 3 |
+| **1.0** | 135 | 43% | $87,315 | $45,320 | **+$41,995** | **1.93** | $4,830 | 595 / 37 | 3 |
+| 0.8 | 136 | 44% | $82,395 | $44,720 | +$37,675 | 1.84 | $5,355 | 601 / 31 | 10 |
+| 0.6 | 140 | 44% | $82,175 | $44,995 | +$37,180 | 1.83 | **$4,420** | 608 / 24 | 13 |
 
-**Nine setups changed target, and the gain came from smaller losses rather than bigger
-wins.** Gross wins moved $170; gross losses fell $1,770. A nearer swing target is reached
-before price can turn back, so trades that would have run to the stop chasing a distant 2R
-fallback closed green instead.
+**Profit factor spans 1.83 to 1.93 — a spike at 1.0, not a trend.** The 1.93 does not survive
+its neighbours: 0.8 falls straight back to where 1.2 was. A single peak between two lower
+readings is the shape of noise, and the same standard that accepted the overnight stop band
+(200 > 250 > 300, monotonic) rejects this one.
 
-**What this says about the fallback.** When a previous swing offers only 1.0–1.2R, taking it
-beats substituting a fixed 2R target. The structure in front of the trade is better
-information than an arithmetic multiple, even when it offers less.
+**The underlying tradeoff is real and it cancels.** Win rate rises monotonically as the
+threshold falls — 41, 43, 44, 44 — and gross wins fall with it, $87,145 down to $82,175.
+Sub-1R wins go from 3 to 13. Nearer targets are hit more often and pay less, in almost exact
+proportion. That is what a plateau looks like from the inside, and it is a more useful finding
+than the 1.93 would have been: **the strategy is not sensitive to this parameter**, so it does
+not need defending in live trading and does not need re-tuning when conditions change.
 
-**Nine setups is not a result on its own.** The direction is plausible and the mechanism is
-clean, but a single step proves little. `Min reward:risk` at 0.8 and 0.6 would say whether
-this is a gradient — which would be evidence — or one lucky step. The template still ships
-1.2 until that is known.
+Left at 1.2. Any value between 0.6 and 1.2 is the same strategy.
 
 ### It passes out of sample
 
