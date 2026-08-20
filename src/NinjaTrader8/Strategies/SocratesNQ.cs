@@ -2204,7 +2204,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Sizing          : {0} contract(s), max {1}, daily loss cap {2}", FixedContracts, MaxContracts, DescribeDailyCap()));
 			Print(string.Format("  Stop            : {0}", DescribeStop()));
 			Print(string.Format("  Step 5 (VIX)    : {0}{1}", VixMode, VixMode == ConfirmationMode.Off ? string.Empty : " on " + VixSymbol));
-			Print(string.Format("  Step 6 (leaders): {0}{1}", BreadthMode, BreadthMode == ConfirmationMode.Off ? string.Empty : " on " + BreadthSymbols));
+			Print(string.Format("  Step 6 (leaders): {0}", DescribeBreadthSource()));
 			Print(string.Format("  Fills           : {0}, slippage {1} tick(s)",
 				FillResolutionMinutes > 0
 					? string.Format("orders submitted on a {0}-minute series", FillResolutionMinutes)
@@ -2320,6 +2320,30 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StopBufferAtr, TargetBufferTicks, MinRewardRisk));
 
 			Print("===================================================================");
+		}
+
+		/// <summary>
+		/// Which form of step 6 is actually in force, said plainly.
+		///
+		/// The leader path falls back from files to platform series silently when the paths
+		/// are missing or unreadable, which is the right behaviour and the wrong thing to
+		/// leave unstated: a run configured for single stock futures that quietly kept
+		/// reading yesterday's CSVs looks like a successful test of something it never
+		/// tested.
+		/// </summary>
+		private string DescribeBreadthSource()
+		{
+			if (BreadthMode == ConfirmationMode.Off)
+				return "Off";
+
+			if (BreadthSource == BreadthSourceMode.RelativeStrength)
+				return string.Format("{0}, relative strength of {1} against {2} over {3} bars",
+					BreadthMode, Instrument != null ? Instrument.MasterInstrument.Name : "the traded instrument",
+					RelativeStrengthSymbol, RelativeStrengthLookback);
+
+			return string.Format("{0}, {1} leaders read from {2} - {3}",
+				BreadthMode, breadthSymbols.Length, filesActive ? "FILES" : "platform series",
+				BreadthSymbols);
 		}
 
 		/// <summary>
