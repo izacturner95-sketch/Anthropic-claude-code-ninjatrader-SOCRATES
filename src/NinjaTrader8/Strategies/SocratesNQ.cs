@@ -127,6 +127,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int dayRejectedSizing;
 		private int dayRejectedRiskBudget;
 
+		// The funnel split by session. The results split showed the strategy takes 94% of its
+		// trades overnight; it could not show why. "The cash session loses money" and "the
+		// cash session never produces a setup" look identical in a results table and need
+		// completely different work - one is a filter problem, the other means the sequence
+		// never completes in fast conditions. This is the difference.
+		private int cashSweeps, nightSweeps;
+		private int cashShifts, nightShifts;
+		private int cashRetests, nightRetests;
+		private int cashSetups, nightSetups;
+
 		private int totalSweeps;
 		private int totalShifts;
 		private int totalZoneTouches;
@@ -995,6 +1005,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			else
 				shortSetups++;
 
+			if (InCashSession())
+				cashSetups++;
+			else
+				nightSetups++;
+
 			string blockDetail;
 			EntryBlockReason block = risk.CanEnter(timeOfDay, out blockDetail);
 			if (block != EntryBlockReason.None)
@@ -1018,12 +1033,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 		/// has no diagnosis: a run that never produced a single sweep and a run that produced
 		/// forty sweeps rejected at step 5 look identical from the outside.
 		/// </summary>
+		/// <summary>The cash session by the clock, so the split means the same thing on any session template.</summary>
+		private bool InCashSession()
+		{
+			int t = ToTime(Time[0]);
+			return t >= 93000 && t <= 160000;
+		}
+
 		private void TrackFunnel(SetupState stateBefore, SetupResult result)
 		{
+			bool cash = InCashSession();
+
 			if (nq.LastUpdateSweep.IsValid)
 			{
 				daySweeps++;
 				totalSweeps++;
+
+				if (cash)
+					cashSweeps++;
+				else
+					nightSweeps++;
 			}
 
 			// A continuation enters AwaitingRetest at the break, without ever passing through
@@ -1043,6 +1072,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				{
 					dayShifts++;
 					totalShifts++;
+
+					if (cash)
+						cashShifts++;
+					else
+						nightShifts++;
 				}
 			}
 
@@ -1052,6 +1086,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				dayZoneTouches++;
 				totalZoneTouches++;
+
+				if (cash)
+					cashRetests++;
+				else
+					nightRetests++;
 			}
 
 			previousZoneTouched = setup.ZoneTouched;
@@ -2098,6 +2137,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			stopTicksMax = 0;
 			stopTicksSum = 0;
 			longSetups = shortSetups = longEntries = shortEntries = 0;
+			cashSweeps = nightSweeps = cashShifts = nightShifts = 0;
+			cashRetests = nightRetests = cashSetups = nightSetups = 0;
 			reversalEntries = continuationEntries = 0;
 			visualEntryBar = -1;
 			visualZoneStartBar = 0;
@@ -3001,6 +3042,29 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print("  --- by session ---");
 			PrintKind("Cash 09:30-16:00", cashTrades, cashWon, cashGrossProfit, cashGrossLoss);
 			PrintKind("Overnight", nightTrades, nightWon, nightGrossProfit, nightGrossLoss);
+
+			// The funnel beside the results, because a session with no trades has two very
+			// different explanations and the results table cannot tell them apart.
+			Print("                    sweeps  shifts  retests  setups");
+			Print(string.Format("  Cash            : {0,6}  {1,6}  {2,7}  {3,6}",
+				cashSweeps, cashShifts, cashRetests, cashSetups));
+			Print(string.Format("  Overnight       : {0,6}  {1,6}  {2,7}  {3,6}",
+				nightSweeps, nightShifts, nightRetests, nightSetups));
+
+			// Cash is about 6.5 of the ~23 traded hours, so a little under 30% of the bars.
+			// A stage falling well below its share is the stage that does not survive fast
+			// conditions, and that is the one to work on.
+			int sweepTotal = cashSweeps + nightSweeps;
+			int setupTotal = cashSetups + nightSetups;
+
+			if (sweepTotal > 0 && setupTotal > 0)
+			{
+				Print(string.Format("  Cash share      : {0:N0}% of sweeps, {1:N0}% of shifts, {2:N0}% of retests, {3:N0}% of setups (bars are ~29%)",
+					(cashSweeps * 100.0) / sweepTotal,
+					cashShifts + nightShifts > 0 ? (cashShifts * 100.0) / (cashShifts + nightShifts) : 0,
+					cashRetests + nightRetests > 0 ? (cashRetests * 100.0) / (cashRetests + nightRetests) : 0,
+					(cashSetups * 100.0) / setupTotal));
+			}
 
 			if (cashTrades > 0 && nightTrades > 0)
 			{
