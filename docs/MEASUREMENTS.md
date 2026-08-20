@@ -526,13 +526,54 @@ of this one:
 combined figure moved away from breakeven as the sample grew. That is the direction that
 says 0.96 was the optimistic end of noise rather than a near miss.
 
-**The cash session is closed.** Not for want of a filter, and not for want of live data —
-the underlying continuation sequence loses money on the largest and most honest sample
-taken. Every configuration above 1.0 in the table was a subtraction from this population,
-and the two that looked best were 17 and 54 trades on the tuning window.
+**The cash session is closed at this penetration threshold.** Not for want of a filter, and
+not for want of live data — the underlying continuation sequence loses money on the largest
+and most honest sample taken. Every configuration above 1.0 in the table was a subtraction
+from this population, and the two that looked best were 17 and 54 trades on the tuning
+window.
+
+That verdict was later challenged by changing the entry premise rather than the filtering —
+see *A deeper penetration requirement* below. It has not yet been overturned, because the
+test that produced this one has not been repeated on the new settings.
 
 Worth stating what it cost to learn: about a week of evenings and no capital. The
 alternative was discovering it on the funded account.
+
+### A deeper penetration requirement
+
+Unfiltered cash again — both confirmations off — but with the entry premise changed rather
+than filtered. 2026-06-14 to 2026-08-18, 2-minute.
+
+| | Original | **Deeper penetration** |
+|---|---|---|
+| Penetration required | max(0.05 ATR, **5 pts**) | max(0.07 ATR, **24 pts**) |
+| Stop band | 20–200 ticks | 20–245 ticks |
+| Trades | 95 | 90 |
+| Win rate | 33% | **41%** |
+| Profit factor | 0.96 | **1.95** |
+| Net | −$1,490 | **+$30,790** |
+| Per trade | −$16 | **+$342** |
+| Largest drawdown | $9,340 | $4,665 |
+
+**The mechanism is structural rather than a bolt-on**, which is the reason to take it more
+seriously than the 1.73 that preceded it. Requiring 24 points of penetration instead of 5
+changes what counts as a broken level: price poking five points through a level and holding
+is not a break, it is noise, and the original threshold was treating the two the same. That
+is a claim about the setup, not a filter applied after the fact.
+
+**The sweep rate also doubled** — one per 3.3 bars against one per 5.8 — which a *higher*
+penetration threshold cannot cause on its own. Something upstream changed the level count
+too (swing strength, level merge distance, or order block settings). Whatever it was should
+be recorded, or this run is not reproducible.
+
+**Untested, and the test is available.** This is the same two-month window that returned
+0.96 before, and that window is known to be the optimistic one: extending the earlier
+configuration to five months took it from 0.96 to 0.91, with the added three months at 0.82.
+Nothing here reads `^VIX` or any file — both confirmations are off — so the window is bounded
+only by NQ 2-minute history, which reaches at least to 2026-03-13. Until that run exists
+this is a two-month in-sample number, which is the same standing the 1.35 and the 1.73 had.
+
+---
 
 ### One thing that is structurally interesting, and is not a reason to reopen this
 
