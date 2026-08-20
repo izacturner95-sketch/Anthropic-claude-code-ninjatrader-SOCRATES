@@ -281,7 +281,17 @@ reversals produced 17 trades alongside continuations and **46** without them —
 continuation holding a position blocks every setup behind it. Their $4,840 of profit was
 sitting on roughly $13,000 of opportunity cost.
 
-Settled. Off.
+**A fifth sample, and the largest.** Continuations run on the overnight session alone —
+5-minute, 2026-03-13 to 2026-08-18, entries 18:00–09:00 only, no flatten window — returned
+**0.83 over 115 trades**, −$7,950, with $15,590 of drawdown. Reversals over a comparable
+window returned 1.47 to 1.93. The direction is not marginal any more.
+
+**This also confirms the sessions want opposite setups.** Continuations are the cash
+session's earner at 1.85 and the overnight's loser at 0.83; reversals are the reverse. That
+symmetry has now been measured on five-month samples at both ends rather than inferred from
+a few dozen trades.
+
+Settled. Off overnight, on in cash.
 
 ---
 
@@ -749,6 +759,22 @@ in series is not twice the filtering, it is one filter and one tax.
 
 **Steps 5 and 6 stay off for the cash configuration.** No tuning was performed and none is
 warranted: a filter whose refused set matches the book average has nothing to tune toward.
+
+### A fourth: the verdict congratulated a filter for keeping the worst trades
+
+The overnight continuations run above put the shadow verdict in a case it got wrong. Step 5
+refused 95 trades that lost $2,890 between them — **−$30.42 each** — leaving 20 trades that
+lost $5,060, **−$253.00 each**. The set it kept was 8.3 times worse per trade. The verdict
+read:
+
+> the refused trades lost $2,890.00 between them. Running the steps live would have avoided
+> that. On this sample the filters are earning their place.
+
+Technically true on the total and backwards on the substance. When every trade loses,
+refusing any of them "avoids a loss", so the old test rewarded a filter for cutting the
+*least* bad trades and keeping the worst. It now compares per-trade averages, prints both,
+and states the counterfactual — how many trades running the steps live would leave and what
+they are worth — rather than the sign of a subtotal.
 
 ### Three reporting bugs this exposed
 

@@ -3327,13 +3327,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
-			Print(refusedPnL < 0
-				? string.Format("  VERDICT: the refused trades lost {0:C} between them. Running the steps live would", -refusedPnL)
-				: string.Format("  VERDICT: the refused trades made {0:C} between them. Running the steps live would", refusedPnL));
+			// Judged per trade, not on the sign of the refused total. When everything loses,
+			// refusing anything "avoids a loss" and a filter that kept the very worst trades
+			// would be congratulated for it - which is exactly what happened on an overnight
+			// run where the refused set averaged -$30 and the set kept averaged -$253.
+			double refusedEach = refusedPnL / refusedTrades;
+			double cleanEach = shadowCleanTrades > 0 ? shadowCleanPnL / shadowCleanTrades : 0.0;
 
-			Print(refusedPnL < 0
-				? "           have avoided that. On this sample the filters are earning their place."
-				: "           have given that up. On this sample the filters are costing money.");
+			Print(string.Format("  Kept {0:C} each against {1:C} each refused.", cleanEach, refusedEach));
+
+			if (shadowCleanTrades == 0)
+			{
+				Print("  VERDICT: the steps would have refused every trade. Nothing is left to judge.");
+			}
+			else if (cleanEach > refusedEach)
+			{
+				Print(string.Format("  VERDICT: the steps keep the better trades, by {0:C} each. On this sample they",
+					cleanEach - refusedEach));
+				Print(string.Format("           are selecting. Running them live gives {0} trades worth {1:C} in place",
+					shadowCleanTrades, shadowCleanPnL));
+				Print(string.Format("           of {0} worth {1:C}.", shadowTotalTrades, shadowTotalPnL));
+			}
+			else
+			{
+				Print(string.Format("  VERDICT: the steps keep the WORSE trades, by {0:C} each. Running them live",
+					refusedEach - cleanEach));
+				Print(string.Format("           gives {0} trades worth {1:C} in place of {2} worth {3:C} - the filters",
+					shadowCleanTrades, shadowCleanPnL, shadowTotalTrades, shadowTotalPnL));
+				Print("           are selecting against this strategy, not for it.");
+			}
 
 			Print(string.Format("           {0} trades of evidence. Keep accumulating before acting on it.", refusedTrades));
 		}
