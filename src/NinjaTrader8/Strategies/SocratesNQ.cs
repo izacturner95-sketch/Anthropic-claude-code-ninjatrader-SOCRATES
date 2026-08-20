@@ -2203,7 +2203,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Trading hours   : {0}", DescribeSession()));
 			Print(string.Format("  Sizing          : {0} contract(s), max {1}, daily loss cap {2}", FixedContracts, MaxContracts, DescribeDailyCap()));
 			Print(string.Format("  Stop            : {0}", DescribeStop()));
-			Print(string.Format("  Step 5 (VIX)    : {0}{1}", VixMode, VixMode == ConfirmationMode.Off ? string.Empty : " on " + VixSymbol));
+			Print(string.Format("  Step 5 (VIX)    : {0}", DescribeVixSource()));
 			Print(string.Format("  Step 6 (leaders): {0}", DescribeBreadthSource()));
 			Print(string.Format("  Fills           : {0}, slippage {1} tick(s)",
 				FillResolutionMinutes > 0
@@ -2320,6 +2320,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StopBufferAtr, TargetBufferTicks, MinRewardRisk));
 
 			Print("===================================================================");
+		}
+
+		/// <summary>
+		/// Where step 5 is reading from, said plainly.
+		///
+		/// Same silent fallback the leader path has: an unusable file path drops step 5 onto
+		/// the platform series without complaint. It is a different confirmation with
+		/// different rejection behaviour, and a run that switched sources without anyone
+		/// intending it is not the experiment it looks like.
+		/// </summary>
+		private string DescribeVixSource()
+		{
+			if (VixMode == ConfirmationMode.Off)
+				return "Off";
+
+			return vixFile != null
+				? string.Format("{0}, read from FILE {1}", VixMode, VixFile)
+				: string.Format("{0}, platform series {1} at {2} minutes", VixMode, VixSymbol, VixBarMinutes);
 		}
 
 		/// <summary>
