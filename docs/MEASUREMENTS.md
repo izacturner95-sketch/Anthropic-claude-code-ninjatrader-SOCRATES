@@ -589,10 +589,11 @@ the same way, and neither has been isolated.
 
 The full configuration is committed as `templates/SocratesNQ - Cash session.xml`.
 
-### Isolating the ten changes, one at a time
+### Isolating the parameters, one at a time
 
-Each row is a single parameter moved back to its old value against the same baseline, same
-window. The baseline is `Min reward:risk` 1.2, level merge 0.45, everything else as shipped.
+Each row is a single parameter moved against the same baseline, same window — not
+cumulative. The baseline is `Min reward:risk` 1.2, level merge 0.45, everything else as
+shipped.
 
 | Parameter | Baseline | Reverted to | Sweeps | Trades | Profit factor | Net | Worst trade |
 |---|---|---|---|---|---|---|---|

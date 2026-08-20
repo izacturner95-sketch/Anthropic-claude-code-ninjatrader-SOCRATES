@@ -130,7 +130,12 @@ is scaled with the contract count.
 It is the strongest result in this project and the only configuration to survive extending
 its window. Full evidence in `docs/MEASUREMENTS.md`.
 
-### What it changed from the earlier cash settings
+### How it differs from the earlier repository template
+
+This is a **diff, not a changelog.** The template it replaces was written here by
+reconstruction from the overnight settings and was never run; the differences below are the
+gap between that guess and a configuration that was actually tuned, not a list of edits made
+in sequence. Do not read the count as the number of things that had to change.
 
 | Parameter | Was | Now | Why it matters |
 |---|---|---|---|
