@@ -330,11 +330,16 @@ does. So the times it prints are the times the strategy sees. If they look shift
 shift is real and `File time offset (minutes)` is what corrects it — the file is not wrong,
 the machine and the chart's exchange time zone simply disagree.
 
-**`VIX` and `^VIX` are different things.** NinjaTrader lists a `VIX` instrument as a stock;
-the volatility index is `^VIX`, which is what this script downloads and what belongs in the
-file. A step 5 configured with `Vix symbol` = `VIX` and no usable file path is confirming
-against the wrong instrument, and nothing in the run will look broken. The startup banner
-names the source for exactly this reason — check it says `read from FILE`.
+**`VIX` and `^VIX` are different things.** NinjaTrader carries both names: `VIX` is a stock
+listing, `^VIX` is the volatility index. A step 5 configured with `Vix symbol` = `VIX` is
+confirming against the wrong instrument, returns bars, and nothing in the run looks broken.
+The startup banner names the source for exactly this reason.
+
+**`^VIX` has a data feed of its own, so the file is optional.** It is also what this script
+downloads, which means `Vix symbol` = `^VIX` with `Vix file` empty gives step 5 the same
+series the CSV held without the snapshot problem. Prefer it for the cash session. The file
+path remains useful only where the feed cannot reach — and where that is true, the checker
+above is how you find out whether what it holds is complete.
 
 `^VIX` is regular-hours only, 09:30–16:15 ET. That makes the file a complete source for the
 cash session and useless overnight, which is why the overnight configuration uses `VX ##-##`

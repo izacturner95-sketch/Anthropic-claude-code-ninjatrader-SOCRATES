@@ -129,7 +129,7 @@
       <MinStopTicks>20</MinStopTicks>
       <MaxStopTicks>200</MaxStopTicks>
       <VixMode>Directional</VixMode>
-      <VixSymbol>VX 08-26</VixSymbol>
+      <VixSymbol>^VIX</VixSymbol>
       <VixBarMinutes>5</VixBarMinutes>
       <VixLookbackBars>6</VixLookbackBars>
       <VixMinDirectionalMove>0.02</VixMinDirectionalMove>

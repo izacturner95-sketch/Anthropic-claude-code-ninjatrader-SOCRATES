@@ -55,7 +55,7 @@ sources moved onto instruments the platform carries:
 
 | | Cash session | Feed only |
 |---|---|---|
-| `Vix symbol` | `VIX` | **`VX 08-26`** |
+| `Vix symbol` | `VIX` | **`^VIX`** |
 | `Vix file` | a CSV path | **empty** |
 | `Breadth source` | `Leaders` | **`RelativeStrength`** |
 | `Comparison symbol` | — | **`ES 09-26`** |
@@ -63,22 +63,31 @@ sources moved onto instruments the platform carries:
 
 Everything else is identical.
 
-**Why these two.** A prop feed is a futures feed. It does not carry cash equities, and
-NinjaTrader's `VIX` instrument is a stock listing rather than the index — a step 5 pointed
-at it confirms against the wrong thing and nothing in the output looks wrong. `VX` is the
-VIX futures contract and `ES` is the S&P 500 future, so both sides of both confirmations
-are instruments the live account can actually see. Relative strength reads NQ against ES:
-the Nasdaq-100 is roughly half Magnificent 7 by weight and the S&P 500 is not, so the
-spread between their moves is a continuous reading of whether big tech is leading.
+**`^VIX` is the index. `VIX` is a stock listing.** NinjaTrader carries both names and only
+one of them is the volatility index. A step 5 pointed at `VIX` confirms against the wrong
+instrument, returns bars, and produces a run in which nothing looks broken — which has
+already cost one test here. `^VIX` is also what the CSV contains, so moving step 5 from the
+file to the platform series changes where the data comes from without changing what the
+data is.
 
-**The contract months are hard-coded and will go stale.** `VX 08-26` and `ES 09-26` are
-correct for a backtest ending 2026-08-18. Change both at every roll, and remember that
-NinjaTrader does not carry the previous contract's history forward — a backtest reaching
-back past a roll loses the confirmation data, which is what produced the earlier runs
-where steps 5 and 6 silently had nothing to read.
+`^VIX` is regular hours only, 09:30–16:15 ET. Complete for this session, useless overnight
+— which is why the overnight configuration uses `VX ##-##` instead.
 
-**Nothing here is measured.** Against the 1.35 baseline this moves two variables at once.
-See the run order below.
+**Step 6 has no equivalent.** There is no index that means what counting seven leaders
+means, so relative strength asks a different question: NQ against ES. The Nasdaq-100 is
+roughly half Magnificent 7 by weight and the S&P 500 is not, so the spread between their
+moves reads as whether big tech is leading. Both are futures, so it behaves the same live
+as in a backtest. In a falling market the two forms disagree — NQ down *less* than ES is
+leadership to one and no participation to the other.
+
+**`ES 09-26` is hard-coded and will go stale.** Change it at every roll. NinjaTrader does
+not carry the previous contract's history forward, so a backtest reaching back past a roll
+loses the data — which is what produced the earlier runs where steps 5 and 6 silently had
+nothing to read.
+
+**Nothing here is measured**, but the two halves are not equally uncertain: step 5 should
+land close to the file version because it is the same series, while step 6 is a genuinely
+different test. If this run misses 1.35, step 6 is the likely reason.
 
 ---
 
@@ -145,9 +154,10 @@ Full numbers in `docs/MEASUREMENTS.md`.
 1. **Whether the feed-only variant holds 1.35.** Two runs: the template as it ships, and
    the same with `Breadth mode` = Off. If either is close to 1.35, the file dependency is
    gone and this becomes a configuration that can actually be traded.
-2. **If both disappoint, isolate.** The variant moves step 5 and step 6 together. Change
-   only `Vix symbol` to `VX 08-26` and clear `Vix file`, leaving the leader files in place
-   — that says which of the two sources cost the difference.
+2. **If both disappoint, isolate.** Change only `Vix symbol` to `^VIX` and clear
+   `Vix file`, leaving the leader files in place. Step 5 on the same data from a different
+   source should barely move; if it does move, the file was never the equivalent of the
+   index and that is worth knowing before anything else is concluded.
 3. **`Max stop (ticks)` below 200.** Half the completed setups implied a stop of 124 ticks
    or less; the band only rejected 15. The overnight sweep was monotonic toward tighter.
 4. **Out-of-sample.** 1.35 was found by looking at this window. Nothing else settles it.
