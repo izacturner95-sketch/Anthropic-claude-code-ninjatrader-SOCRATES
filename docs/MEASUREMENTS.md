@@ -956,12 +956,17 @@ Session gated to 18:00–09:00 with the flatten window disabled, reversals only,
 | Largest drawdown | **$1,520** |
 | Mean R | +1.79 |
 
-**Read the trade count before the profit factor.** Thirty-three trades over five months is
-1.5 a week, and 4.48 with a 58% win rate is not a number this document has any business
-believing on that sample. The progression is the warning: the overnight session has gone
-1.93 on 63 trades, to 2.72 on 46, to 4.48 on 33. Profit factor rising as the sample shrinks
-is exactly the shape that produced the cash session's 1.73-on-17-trades, which turned out to
-be noise.
+**The window is not five months.** `VX 08-26` history starts in mid-May, and the first trade
+of this run was 2026-05-28 — so the effective range is **2.7 months, not 5.2**. Two
+consequences, and they pull opposite ways. The trade *rate* is fine at roughly twelve a
+month; the earlier reading of 1.5 a week was wrong. The *out-of-sample* position is worse
+than stated: the overnight thresholds were tuned on 06-17 to 08-18, so all but three weeks
+of this run sits inside the tuning window. There is essentially no out-of-sample content in
+the 4.48 at all.
+
+**And the progression is still the warning.** The overnight session has gone 1.93 on 63
+trades, to 2.72 on 46, to 4.48 on 33. Profit factor rising as the sample shrinks is exactly
+the shape that produced the cash session's 1.73-on-17-trades, which turned out to be noise.
 
 **It does survive losing its best trade**, which is the one point in its favour. The +16.11R
 trade is worth about $10,400 at mean risk; removing it leaves 32 trades at **3.42** and $745
@@ -976,11 +981,21 @@ the five-month split measured at −$442 each.
 53. It is switched on and filtering essentially nothing, which is worth knowing before any
 weight is placed on it.
 
-**The test this needs is the one the cash configuration passed.** Re-run on 2026-06-17 to
-08-19 alone and subtract, so the March-to-June portion becomes a genuine out-of-sample third.
-Until then 4.48 is a two-month-tuned configuration measured on five months of the same
-tuning, and its sample would not clear the sixty-trade bar this document sets even if it were
-clean.
+**The test the cash configuration passed cannot be run here.** Splitting this window leaves
+three weeks and a handful of trades outside the tuning period — not a sample. And the data to
+extend it does not exist: `VX ##-##` history dies with the contract, so no VX-based
+configuration can ever reach back further than the current contract's life. This is a
+permanent property of the instrument, not a gap to be filled.
+
+That leaves two honest routes, and neither is a rerun:
+
+- **Validate the base system instead.** `Vix mode` off has no data dependency, so the
+  reversal sequence can be tested across as much NQ 5-minute history as exists. That is what
+  settled the cash session, and it measures the part of the strategy that is actually
+  testable. Step 5's contribution stays a shorter-window measurement — the controlled test
+  put it at 1.71 to 1.96 — rather than something the long run can confirm.
+- **Accept that step 5's out-of-sample evidence has to come forward, not backward.** Market
+  Replay and forward testing are the only instruments that can produce it.
 
 ---
 
