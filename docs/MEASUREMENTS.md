@@ -673,6 +673,56 @@ again.
 
 ---
 
+## Tuning the confirmations: the answer was don't
+
+Shadow run on the 1.85 configuration, five months, both steps Directional — step 5 on the
+platform `^VIX`, step 6 on relative strength against `ES 09-26`. Every trade taken, verdicts
+recorded, nothing blocked.
+
+| | Trades | Won | Net | Per trade |
+|---|---|---|---|---|
+| **Neither step objected** | **4** | **0** | **−$3,435** | **−$858.75** |
+| Step 5 would refuse | 115 | 41% | +$34,955 | +$303.96 |
+| Refused by either (distinct) | 131 | | +$43,490 | +$331.98 |
+| The book | 135 | 41% | +$40,055 | +$296.70 |
+
+**Running both steps live would have left four trades, none of them winners, losing
+$3,435.** That is the whole answer and it needed one run.
+
+**Step 5 is refusing average trades, not bad ones.** The 115 it would block won 41% and made
+$303.96 each, against a book that won 41% and made $296.70. It is not selecting; it is
+sampling. Randomly removing trades from a positive-expectancy book costs money in
+proportion to how many it removes, and this removes 85% of them.
+
+**Why this differs from the overnight result, where step 5 is worth 1.71 → 1.96.** The
+confirmations were built to rescue a noisy population — they were the answer to entries that
+were not selective enough. The deeper penetration threshold now does that job at the entry,
+so there is nothing left for a confirmation to strain out. Two filters doing the same work
+in series is not twice the filtering, it is one filter and one tax.
+
+**Steps 5 and 6 stay off for the cash configuration.** No tuning was performed and none is
+warranted: a filter whose refused set matches the book average has nothing to tune toward.
+
+### Three reporting bugs this exposed
+
+The shadow output that produced the above was internally inconsistent, and all three are now
+fixed.
+
+- **The verdict double-counted.** A trade both steps object to lands in both buckets by
+  design, but the verdict added the buckets — reporting 231 refusals worth $76,020 where
+  there were 131 worth $43,490. One hundred trades were counted twice, profit included. The
+  verdict now subtracts the clean bucket from the total.
+- **Step 6's shadow line never printed.** It was guarded on the leaders object being
+  non-null, and relative strength is a different object, so the entire step 6 row was absent
+  from a run where step 6 objected to 116 trades.
+- **`Setups completed` was summed from the rejection buckets**, which only partition the
+  setups when a rejection actually stops one. Under shadow confirmations nothing stops, so
+  vetoed setups were counted twice and doubly-vetoed ones three times: 599 printed against a
+  true 244, contradicting both the long/short split and the stop histogram in the same
+  output. It is now counted directly.
+
+---
+
 ## How to tune a confirmation without contaminating the answer
 
 **Use `Shadow confirmations`, not a run per setting.** Every trade is taken; the steps

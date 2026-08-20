@@ -239,6 +239,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int shadowCleanTrades;
 		private int shadowCleanWon;
 		private double shadowCleanPnL;
+		private int shadowTotalTrades;
+		private double shadowTotalPnL;
 		private int tradesWon;
 		private int tradesLost;
 		private int tradesScratch;
@@ -2170,6 +2172,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			shadowVixVetoTrades = shadowVixVetoWon = 0;
 			shadowBreadthVetoTrades = shadowBreadthVetoWon = 0;
 			shadowCleanTrades = shadowCleanWon = 0;
+			shadowTotalTrades = 0;
+			shadowTotalPnL = 0;
 			shadowVixVetoPnL = shadowBreadthVetoPnL = shadowCleanPnL = 0;
 			tradesWon = tradesLost = tradesScratch = 0;
 			grossProfit = grossLoss = largestLoss = 0;
@@ -2899,6 +2903,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			// A trade can be vetoed by both steps, so it lands in both buckets. The clean
 			// bucket is the counterfactual: what the run would have been with the filters on.
+			// The totals are kept separately because summing the two veto buckets counts
+			// every doubly-vetoed trade twice, which overstates what the steps refuse.
+			shadowTotalTrades++;
+			shadowTotalPnL += profitDollars;
+
 			if (vixVetoed)
 			{
 				shadowVixVetoTrades++;
@@ -3291,7 +3300,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					shadowVixVetoTrades > 0 ? string.Format(", {0:C} each", shadowVixVetoPnL / shadowVixVetoTrades) : string.Empty));
 			}
 
-			if (breadth != null)
+			if (breadth != null || relStrength != null)
 			{
 				Print(string.Format("  Step 6 would refuse   : {0} trades, {1} won, {2:C}{3}",
 					shadowBreadthVetoTrades, shadowBreadthVetoWon, shadowBreadthVetoPnL,
@@ -3301,8 +3310,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// The verdict, stated so it cannot be read the flattering way by accident. A
 			// filter earns its place by refusing trades that lost money; refusing trades that
 			// made money is a cost, however sound the reasoning behind it sounds.
-			double refusedPnL = shadowVixVetoPnL + shadowBreadthVetoPnL;
-			int refusedTrades = shadowVixVetoTrades + shadowBreadthVetoTrades;
+			// Distinct, by subtraction. A trade both steps objected to is one refusal, not
+			// two, and adding the buckets reported it as two - along with its profit twice.
+			double refusedPnL = shadowTotalPnL - shadowCleanPnL;
+			int refusedTrades = shadowTotalTrades - shadowCleanTrades;
+
+			if (shadowVixVetoTrades > 0 && shadowBreadthVetoTrades > 0)
+			{
+				Print(string.Format("  Both steps objected   : {0} trades (counted once below, twice above)",
+					shadowVixVetoTrades + shadowBreadthVetoTrades - refusedTrades));
+			}
 
 			if (refusedTrades == 0)
 			{
@@ -3347,8 +3364,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!EnableLogging)
 				return;
 
-			int completedSetups = totalEntries + totalBlockedByRisk + totalRejectedVix
-				+ totalRejectedBreadth + totalRejectedStop + totalRejectedSizing + totalRejectedRiskBudget;
+			// Counted directly rather than summed from the rejection buckets. Those only
+			// partition the setups when a rejection actually stops one: under shadow
+			// confirmations the steps record a verdict and the setup proceeds anyway, so
+			// the sum counted every vetoed setup twice and every doubly-vetoed one three
+			// times - 599 against a true 244 on the run that exposed this.
+			int completedSetups = longSetups + shortSetups;
 
 			Print("=== Socrates NQ - run summary =====================================");
 
