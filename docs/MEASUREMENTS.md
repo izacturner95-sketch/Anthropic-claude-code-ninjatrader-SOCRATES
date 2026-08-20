@@ -6,6 +6,12 @@ strategy accumulates opinions faster than it accumulates evidence.
 
 **Read the sample sizes.** Nothing here is large. The longest sample is two months.
 
+**A number measured on data the live account cannot see is not a result.** It is an
+interesting fact about a data set. Every figure below is tagged for whether it is
+reproducible on a futures-only feed, because that is the only kind that can be forward
+tested — and the best-performing configuration in both sessions is currently one that
+cannot be.
+
 ---
 
 ## The controlled experiment: what the confirmations are worth
