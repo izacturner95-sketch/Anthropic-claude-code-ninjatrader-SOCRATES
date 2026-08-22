@@ -141,6 +141,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int totalShifts;
 		private int totalZoneTouches;
 		private int totalEntries;
+
+		// Break-even and trailing state. The stop set at entry is kept separately from the
+		// stop currently live, because risk in points is measured against the original -
+		// once the stop has moved, the distance to it is no longer what was risked.
+		private double entryStopPrice;
+		private double liveStopPrice;
+		private bool breakEvenArmed;
+		private bool trailArmed;
+		private double trailExtreme;
+		private int breakEvenArmedTrades;
+		private int trailArmedTrades;
 		private int totalBlockedByRisk;
 		private int totalRejectedVix;
 		private int totalRejectedBreadth;
@@ -436,6 +447,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// fixed tick count. So this is set wide enough to stop being the binding
 				// constraint, and the banner prints what it implies against the daily cap.
 				MaxStopTicks = 400;
+
+				// Off. Both are exit management rather than entry logic, and neither has been
+				// measured on this strategy - a trail that fires before the target is reached
+				// converts winners into smaller winners, which looks like risk control and is
+				// not free.
+				BreakEvenTriggerR = 0;
+				BreakEvenTriggerTicks = 0;
+				BreakEvenOffsetTicks = 0;
+				TrailTriggerR = 0;
+				TrailTriggerTicks = 0;
+				TrailDistanceTicks = 0;
 
 				// --- Step 5: VIX ---
 				//
@@ -895,7 +917,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// Flat means the entry that was holding the position is finished with. Read after
 			// DrainCompletedTrades so a halt fired in there still has the label to exit with.
 			if (Position.MarketPosition == MarketPosition.Flat)
+			{
 				activeEntryLabel = null;
+				breakEvenArmed = false;
+				trailArmed = false;
+				trailExtreme = 0;
+				entryStopPrice = 0;
+				liveStopPrice = 0;
+			}
 
 			int timeOfDay = ToTime(Time[0]);
 
@@ -998,7 +1027,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			if (Position.MarketPosition != MarketPosition.Flat)
+			{
+				ManageOpenPosition();
 				return;
+			}
 
 			if (!result.HasEntry)
 				return;
@@ -1688,6 +1720,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			string label = result.Label;
 
 			SetStopLoss(label, CalculationMode.Price, stopPrice, false);
+			entryStopPrice = stopPrice;
+			liveStopPrice = stopPrice;
+			breakEvenArmed = false;
+			trailArmed = false;
+			trailExtreme = 0;
 
 			// Set methods are sticky: a price registered against a signal name stays registered
 			// until it is overwritten. Skipping the call when there is no target left the
@@ -2172,6 +2209,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			shadowVixVetoTrades = shadowVixVetoWon = 0;
 			shadowBreadthVetoTrades = shadowBreadthVetoWon = 0;
 			shadowCleanTrades = shadowCleanWon = 0;
+			breakEvenArmedTrades = trailArmedTrades = 0;
 			shadowTotalTrades = 0;
 			shadowTotalPnL = 0;
 			shadowVixVetoPnL = shadowBreadthVetoPnL = shadowCleanPnL = 0;
@@ -2323,6 +2361,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				ZoneMode, RetestZoneAtr, MaxBarsShiftToRetest, RequireConfirmationClose ? "required" : "not required"));
 			Print(string.Format("  Exits        : stop {0:N2} ATR past the previous swing, target {1} ticks short of the next one, min {2:N2}R",
 				StopBufferAtr, TargetBufferTicks, MinRewardRisk));
+			Print(string.Format("  Break even   : {0}", DescribeBreakEven()));
+			Print(string.Format("  Trail        : {0}", DescribeTrail()));
 
 			Print("===================================================================");
 		}
@@ -2357,6 +2397,152 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format(
 				"      Every risk figure and R multiple below is off by {0:N1}x, and any dollar risk cap is priced wrong. Set it to {1:C}.",
 				TickValueDollars / actual, actual));
+		}
+
+		private string DescribeBreakEven()
+		{
+			if (BreakEvenTriggerR <= 0 && BreakEvenTriggerTicks <= 0)
+				return "off";
+
+			return string.Format("stop to entry{0} at {1}",
+				BreakEvenOffsetTicks > 0 ? string.Format(" +{0} ticks", BreakEvenOffsetTicks) : string.Empty,
+				DescribeTrigger(BreakEvenTriggerR, BreakEvenTriggerTicks));
+		}
+
+		private string DescribeTrail()
+		{
+			if (TrailDistanceTicks <= 0)
+				return "off";
+
+			if (TrailTriggerR <= 0 && TrailTriggerTicks <= 0)
+				return string.Format("{0} ticks behind, but no trigger set - never arms", TrailDistanceTicks);
+
+			return string.Format("{0} ticks behind the best price, from {1}",
+				TrailDistanceTicks, DescribeTrigger(TrailTriggerR, TrailTriggerTicks));
+		}
+
+		private static string DescribeTrigger(double triggerR, int triggerTicks)
+		{
+			if (triggerR > 0 && triggerTicks > 0)
+				return string.Format("{0:N2}R or {1} ticks, whichever comes first", triggerR, triggerTicks);
+
+			return triggerR > 0
+				? string.Format("{0:N2}R", triggerR)
+				: string.Format("{0} ticks", triggerTicks);
+		}
+
+		/// <summary>
+		/// Move the stop to break even, then trail it, once the trade has gone far enough.
+		///
+		/// Both triggers accept an R multiple and a tick distance, and fire on whichever is
+		/// reached first - 0 disables that half. R is measured against the stop set at entry,
+		/// not the stop currently live, because once the stop has moved the distance to it is
+		/// no longer what was risked.
+		///
+		/// Triggers are tested against the bar's extreme rather than its close, so a bar that
+		/// reached the level intraday arms the move. That matches how the stop would behave
+		/// live, where it is resting in the market rather than being reconsidered once a bar.
+		/// The move itself still happens on the close, which is the one optimism here: a
+		/// trade that ran to the trigger and reversed within the same bar is credited with a
+		/// stop it would not have had time to place.
+		///
+		/// Only ever tightens. A stop is never moved away from price, and never through it -
+		/// NinjaTrader rejects a long's stop at or above the market, and a rejected stop is a
+		/// position with no protection at all.
+		/// </summary>
+		private void ManageOpenPosition()
+		{
+			if (string.IsNullOrEmpty(activeEntryLabel) || entryStopPrice <= 0)
+				return;
+
+			bool isLong = Position.MarketPosition == MarketPosition.Long;
+			double entry = Position.AveragePrice;
+
+			if (entry <= 0)
+				return;
+
+			double riskPoints = Math.Abs(entry - entryStopPrice);
+
+			if (riskPoints <= 0)
+				return;
+
+			// How far the trade has gone in its favour at its best point this bar.
+			double favourable = isLong ? High[0] - entry : entry - Low[0];
+			double favourableTicks = favourable / TickSize;
+			double favourableR = favourable / riskPoints;
+
+			double newStop = 0;
+
+			// --- Break even ---
+			if (!breakEvenArmed && Triggered(favourableR, favourableTicks, BreakEvenTriggerR, BreakEvenTriggerTicks))
+			{
+				breakEvenArmed = true;
+				breakEvenArmedTrades++;
+
+				double offset = BreakEvenOffsetTicks * TickSize;
+				newStop = isLong ? entry + offset : entry - offset;
+
+				Log(string.Format("Break even armed at {0:N2}R ({1:N0} ticks). Stop to {2:N2}.",
+					favourableR, favourableTicks, newStop));
+			}
+
+			// --- Trail ---
+			if (TrailDistanceTicks > 0)
+			{
+				if (!trailArmed && Triggered(favourableR, favourableTicks, TrailTriggerR, TrailTriggerTicks))
+				{
+					trailArmed = true;
+					trailArmedTrades++;
+					trailExtreme = isLong ? High[0] : Low[0];
+
+					Log(string.Format("Trail armed at {0:N2}R ({1:N0} ticks), {2} ticks behind.",
+						favourableR, favourableTicks, TrailDistanceTicks));
+				}
+
+				if (trailArmed)
+				{
+					trailExtreme = isLong
+						? Math.Max(trailExtreme, High[0])
+						: Math.Min(trailExtreme, Low[0]);
+
+					double trailed = isLong
+						? trailExtreme - TrailDistanceTicks * TickSize
+						: trailExtreme + TrailDistanceTicks * TickSize;
+
+					// The trail wins only where it is the tighter of the two.
+					if (newStop <= 0 || (isLong ? trailed > newStop : trailed < newStop))
+						newStop = trailed;
+				}
+			}
+
+			if (newStop <= 0)
+				return;
+
+			// Never through the market. A stop the platform refuses leaves the position naked,
+			// which is worse than a stop that did not move.
+			newStop = isLong
+				? Math.Min(newStop, Close[0] - TickSize)
+				: Math.Max(newStop, Close[0] + TickSize);
+
+			// Never looser than what is already resting.
+			if (isLong ? newStop <= liveStopPrice : newStop >= liveStopPrice)
+				return;
+
+			newStop = Instrument.MasterInstrument.RoundToTickSize(newStop);
+			liveStopPrice = newStop;
+			SetStopLoss(activeEntryLabel, CalculationMode.Price, newStop, false);
+		}
+
+		/// <summary>
+		/// Whichever of the two thresholds is reached first, ignoring the ones set to 0.
+		/// Both off means the feature is off.
+		/// </summary>
+		private static bool Triggered(double favourableR, double favourableTicks, double triggerR, int triggerTicks)
+		{
+			if (triggerR > 0 && favourableR >= triggerR)
+				return true;
+
+			return triggerTicks > 0 && favourableTicks >= triggerTicks;
 		}
 
 		/// <summary>
@@ -3712,6 +3898,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (setup != null && setup.StopsFromRetest + setup.StopsFromSwing + setup.StopsFromSweepExtreme > 0)
 			{
+			if (breakEvenArmedTrades > 0 || trailArmedTrades > 0)
+			{
+				Print(string.Format("  Stop moved after entry: break even on {0} trades, trail armed on {1}.",
+					breakEvenArmedTrades, trailArmedTrades));
+				Print("      A trade counts once, on the bar the trigger was reached. Compare the R");
+				Print("      distribution against a run with both off - a trail that fires early turns");
+				Print("      winners into smaller winners, which reads as risk control and is not free.");
+			}
+
 				Print(string.Format("  Anchored to the retest low/high: {0}. Confirmed swing: {1}. Swept extreme: {2}.",
 					setup.StopsFromRetest, setup.StopsFromSwing, setup.StopsFromSweepExtreme));
 			}
@@ -3962,6 +4157,36 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(1, 2000)]
 		[Display(Name = "Max stop (ticks)", Description = "Backstop only - 'Max setup risk (ATR)' is the real ceiling and works in the units the market moves in. The banner warns if this contradicts the daily loss limit.", GroupName = "6. Step 4 - Retest", Order = 9)]
 		public int MaxStopTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 20)]
+		[Display(Name = "Break even at (R)", Description = "Move the stop to entry once the trade is this many multiples of its original risk in profit. 0 disables this trigger. R is measured against the stop set at entry, not the one currently resting.", GroupName = "6b. Exits - Break even and trail", Order = 0)]
+		public double BreakEvenTriggerR { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 5000)]
+		[Display(Name = "Break even at (ticks)", Description = "Move the stop to entry once the trade is this many ticks in profit. 0 disables this trigger. Set alongside the R trigger and whichever comes first wins.", GroupName = "6b. Exits - Break even and trail", Order = 1)]
+		public int BreakEvenTriggerTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 500)]
+		[Display(Name = "Break even offset (ticks)", Description = "Ticks beyond entry to leave the stop at, in the trade's favour. A few ticks covers commission so a break-even exit is genuinely flat rather than slightly negative.", GroupName = "6b. Exits - Break even and trail", Order = 2)]
+		public int BreakEvenOffsetTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 20)]
+		[Display(Name = "Trail from (R)", Description = "Start trailing once the trade is this many multiples of its original risk in profit. 0 disables this trigger. Needs a trail distance to do anything.", GroupName = "6b. Exits - Break even and trail", Order = 3)]
+		public double TrailTriggerR { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 5000)]
+		[Display(Name = "Trail from (ticks)", Description = "Start trailing once the trade is this many ticks in profit. 0 disables this trigger. Whichever of the two triggers comes first wins.", GroupName = "6b. Exits - Break even and trail", Order = 4)]
+		public int TrailTriggerTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 5000)]
+		[Display(Name = "Trail distance (ticks)", Description = "How far behind the best price reached the stop follows. 0 turns trailing off entirely regardless of the triggers. Tight enough and it exits every winner early; wide enough and it never fires before the target does.", GroupName = "6b. Exits - Break even and trail", Order = 5)]
+		public int TrailDistanceTicks { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "VIX mode", Description = "Off, Directional (VIX must move inversely), or Strict (must also react from a key level).", GroupName = "7. Step 5 - VIX", Order = 0)]

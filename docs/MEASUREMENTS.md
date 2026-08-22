@@ -1147,6 +1147,34 @@ document was seventeen trades and it was noise.
 
 ---
 
+## Break even and trailing stops
+
+Added, shipped **off**, and unmeasured. Both are exit management rather than entry logic, and
+this document has no evidence about either.
+
+**Both accept two triggers and fire on whichever comes first.** `Break even at (R)` /
+`(ticks)`, and `Trail from (R)` / `(ticks)`. Zero disables that half; both zero disables the
+feature. R is measured against the stop set at entry, not the one currently resting — once a
+stop has moved, the distance to it is no longer what was risked.
+
+**What to expect before running it.** The R distribution in every run here shows where the
+money is: 5 trades better than +5R and 11 between +3R and +5R carried the cash configuration,
+against 43 stopped out near −1R. A trail tight enough to protect the −1R trades will also cut
+the +5R ones short, and those are not evenly matched. Break even is the milder of the two —
+it converts some losses into scratches without capping anything — but it also turns trades
+that would have dipped and recovered into scratches, and this strategy enters on retests,
+which are precisely trades that dip before working.
+
+The run summary reports how many trades armed each, and the R distribution is where to look
+for the cost. Compare against a run with both off rather than against expectations.
+
+**One optimism to know about.** Triggers are tested against the bar's high or low, so a bar
+that reached the level intraday arms the move, but the stop is placed on the close. A trade
+that ran to the trigger and reversed inside the same bar is credited with a stop it would not
+have had time to place. On 2-minute bars that window is small; it is not zero.
+
+---
+
 ## What this does not tell you
 
 **Everything here is in-sample.** The penetration thresholds, the stop band, step 6's
