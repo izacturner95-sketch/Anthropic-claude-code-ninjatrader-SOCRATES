@@ -1178,37 +1178,57 @@ have had time to place. On 2-minute bars that window is small; it is not zero.
 ## Why Market Replay and its own recompute disagree
 
 First replay session: **+$1,430 while playing, −$440 when the strategy was toggled off and on
-and recomputed the same period historically.** The trades taken live were absent from the
-recompute — which looks like repainting and is not.
+and recomputed the same period historically** — with the live session's trades absent from
+the recompute. It looks like repainting and is not: no indicator looks ahead (swings confirm
+after a fixed bar count, every evaluation is fed bar time rather than the machine clock —
+verified). Two mechanisms in this strategy can legitimately produce it.
 
-**The confirmations fail open, and replay data is per-instrument.** Market Replay only plays
-back instruments whose replay data is downloaded. With NQ's replay data loaded but not
-`VX 08-26`'s or `ES 09-26`'s, those series go silent the moment replay starts. Steps 5 and 6
-then read their source as quiet — and `Skip when quiet` passes the setup unjudged. The replay
-session traded the **base system**. The historical recompute has full VX and ES history, so
-the confirmations actually ran, vetoed roughly half the setups, and produced a different —
-and here worse — result.
+**1. The confirmations fail open when their source is silent.** Market Replay only plays
+instruments whose replay data is downloaded, so with NQ loaded but not `VX 08-26` or
+`ES 09-26`, steps 5 and 6 read their source as quiet and `Skip when quiet` passes every
+setup unjudged — the replay trades the base system while the recompute, with full history,
+runs the confirmations and vetoes setups. The live summary now prints a note when this
+happens. **This was not the cause of the session above** — it ran with both steps off — but
+it is lying in wait for any replay of the full configuration, and the same fail-open applies
+live on a feed drop.
 
-Nothing repaints: no indicator looks ahead (swings confirm after a fixed bar count, every
-evaluation is fed bar time, not the machine clock — verified), and each run is internally
-honest. They are two different strategies: one with the filters silently absent, one with
-them present.
+**2. The day's risk state resets at enable, and the recompute's does not.** This is the
+prime suspect for the session above, and it is a designed behaviour: `CarryReplayRiskState`
+defaults to false because simulated fills from the loaded history were halting live sessions
+on the funded account. The cost of that fix is an asymmetry — the live session starts its
+day with a clean $1,000 budget whenever it is enabled, while the recompute accumulates the
+whole day continuously.
 
-**The tell is in the logs.** During replay every such entry logs
-`Step 5 passed: VIX quiet for N minutes - step 5 not applicable`, and the disable-summary
-shows the quiet-skipped count where the recompute shows direction rejections instead. The
-live summary now says this explicitly when it happens.
+The overnight template's arithmetic makes this bite hard. Mean risk is roughly $650 a trade
+against a $1,000 daily cap, and the pre-trade budget check refuses any entry whose own risk
+exceeds what is left. So in a continuous run, **one losing trade leaves $350 of budget —
+about 70 ticks — and effectively ends the trading day.** A live session enabled after that
+loss sits in the loaded history starts fresh and trades on. The recompute says HaltedForDay
+or Daily risk budget; the live session never knew.
 
-**The same mechanism exists live**, by design: a feed drop silently degrades the strategy to
-its unfiltered base rather than halting it. For this strategy that is a defensible default —
-the overnight base measured profitable without step 5 — but it is a choice, and
-`Skip when quiet` off is the alternative: a silent source then vetoes instead of passing.
+**How to tell which happened:** compare the two run summaries' rejection tables. The
+recompute will carry the vanished trades under `HaltedForDay` or `Daily risk budget`, and
+each such refusal logs `Entry skipped: risking $X against $Y left of today's limit`. The
+live session's output at enable prints the handover line naming what was discarded.
 
-**For Market Replay:** either download replay data for `VX 08-26` and `ES 09-26` (Tools →
-Historical Data; note NinjaTrader may not offer replay data for CFE instruments at all), or
-run replay with steps 5 and 6 off and treat it as what it then honestly is — a replay of the
-base configuration. Do not tune anything against a replay session whose confirmations were
-secretly asleep.
+**The decisive test:** set `Max daily loss ($)` to 0, replay a short stretch, toggle and
+recompute. If the two now agree, the budget state was the whole story. Setting
+`CarryReplayRiskState` true instead makes the live session inherit the day's history and
+agree with the recompute — at the price of the original problem it was added to fix.
+
+**A residual disagreement never fully closes:** realtime fills happen on ticks and
+historical fills on the 1-minute series, and with one position at a time a single
+differently-timed exit changes which later setups were reachable. Small, inherent, and not
+worth chasing.
+
+**Separate from replay, the arithmetic above is worth staring at.** A $1,000 cap against a
+20–225 tick stop band means even a fresh day cannot afford the top of the band ($1,125), and
+any single loss reduces the affordable stop to about 70 ticks. This is the same
+budget-reshapes-the-book mechanism the two-contract test exposed, operating at one contract.
+The measured overnight results were produced with no daily cap at all — so the live
+configuration with the $1,000 cap is **not the configuration that was measured**. Either
+raise the cap to cover at least one full-width loss with room to re-enter, or re-measure
+with the cap in place before trusting the old numbers.
 
 ---
 
