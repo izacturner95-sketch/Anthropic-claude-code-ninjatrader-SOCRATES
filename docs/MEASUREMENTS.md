@@ -1192,8 +1192,33 @@ happens. **This was not the cause of the session above** — it ran with both st
 it is lying in wait for any replay of the full configuration, and the same fail-open applies
 live on a feed drop.
 
-**2. The day's risk state resets at enable, and the recompute's does not.** This is the
-prime suspect for the session above, and it is a designed behaviour: `CarryReplayRiskState`
+**2. Replay and recompute do not see the same bars.** This is the explanation for the
+session above, which ran the RTH configuration with both steps off and flipped trade
+*direction* between the two runs — sometimes on the first trade, which no accumulated state
+can do. Two inputs differ:
+
+- **The primary bars themselves.** A replay session's bars are built from NinjaTrader's
+  recorded replay feed; the recompute's bars come from the provider's historical data. They
+  are different recordings of the same market and disagree by ticks. This strategy's sweep
+  side hinges on whether a close is a few ticks above or below a level, so a tick of
+  difference flips which side was swept — a short becomes a long.
+- **The reference series.** Prior day and week levels are read from the native daily and
+  weekly series, whose closes are settlement-based. During replay, the building daily bar
+  derives from replayed ticks instead. Different level prices, different level gets raided,
+  and the deeper-raid resolution can pick the opposite side.
+
+**The consequence is blunt: a recompute after a replay session is a backtest on different
+data, and agreement between them is not an achievable standard.** Verify it on any flipped
+trade: both runs log the setup transitions with the level name and price
+(`Sweep BuySide of PriorDayLow @ ...`) — the prices will not match at the same timestamp.
+
+Use replay for what only it can test — order handling, fills, the stop actually resting in
+the market, the enable handover — and judge the session's trades on their own. Signal
+validation belongs to the backtest, comparisons belong to distributions, never to
+trade-by-trade agreement between the two.
+
+**3. The day's risk state resets at enable, and the recompute's does not.** Real, but it can
+only *remove* trades, never flip one — a designed behaviour: `CarryReplayRiskState`
 defaults to false because simulated fills from the loaded history were halting live sessions
 on the funded account. The cost of that fix is an asymmetry — the live session starts its
 day with a clean $1,000 budget whenever it is enabled, while the recompute accumulates the
