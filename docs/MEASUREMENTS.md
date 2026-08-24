@@ -1175,6 +1175,43 @@ have had time to place. On 2-minute bars that window is small; it is not zero.
 
 ---
 
+## Why Market Replay and its own recompute disagree
+
+First replay session: **+$1,430 while playing, −$440 when the strategy was toggled off and on
+and recomputed the same period historically.** The trades taken live were absent from the
+recompute — which looks like repainting and is not.
+
+**The confirmations fail open, and replay data is per-instrument.** Market Replay only plays
+back instruments whose replay data is downloaded. With NQ's replay data loaded but not
+`VX 08-26`'s or `ES 09-26`'s, those series go silent the moment replay starts. Steps 5 and 6
+then read their source as quiet — and `Skip when quiet` passes the setup unjudged. The replay
+session traded the **base system**. The historical recompute has full VX and ES history, so
+the confirmations actually ran, vetoed roughly half the setups, and produced a different —
+and here worse — result.
+
+Nothing repaints: no indicator looks ahead (swings confirm after a fixed bar count, every
+evaluation is fed bar time, not the machine clock — verified), and each run is internally
+honest. They are two different strategies: one with the filters silently absent, one with
+them present.
+
+**The tell is in the logs.** During replay every such entry logs
+`Step 5 passed: VIX quiet for N minutes - step 5 not applicable`, and the disable-summary
+shows the quiet-skipped count where the recompute shows direction rejections instead. The
+live summary now says this explicitly when it happens.
+
+**The same mechanism exists live**, by design: a feed drop silently degrades the strategy to
+its unfiltered base rather than halting it. For this strategy that is a defensible default —
+the overnight base measured profitable without step 5 — but it is a choice, and
+`Skip when quiet` off is the alternative: a silent source then vetoes instead of passing.
+
+**For Market Replay:** either download replay data for `VX 08-26` and `ES 09-26` (Tools →
+Historical Data; note NinjaTrader may not offer replay data for CFE instruments at all), or
+run replay with steps 5 and 6 off and treat it as what it then honestly is — a replay of the
+base configuration. Do not tune anything against a replay session whose confirmations were
+secretly asleep.
+
+---
+
 ## What this does not tell you
 
 **Everything here is in-sample.** The penetration thresholds, the stop band, step 6's

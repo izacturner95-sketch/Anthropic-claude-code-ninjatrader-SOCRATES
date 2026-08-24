@@ -3751,6 +3751,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 						vix.SkippedQuiet, totalRejectedVix + vix.Confirmed));
 					Print("            outside the cash session, so overnight it mostly has nothing to say.");
 				}
+
+				// The quiet-skip fails OPEN, and that has a consequence worth stating where
+				// the numbers are: a session whose source was silent (Market Replay without
+				// that instrument's replay data, a feed drop live) takes trades that a
+				// historical recompute - where the source HAS data - will veto. The two runs
+				// then legitimately disagree, and it looks like the strategy repainting.
+				if (State == State.Realtime && vix.SkippedQuiet > 0)
+				{
+					Print(string.Format("      NOTE: {0} quiet-skips in a live session. Each passed a setup unjudged;", vix.SkippedQuiet));
+					Print("            a historical rerun, where the source has data, may veto those trades");
+					Print("            and disagree with this session. In Market Replay this means the VX/ES");
+					Print("            replay data is not loaded - the confirmations are not actually running.");
+				}
 			}
 			// Relative strength reports on its own terms. Reusing the leader wording - how
 			// many of seven agreed - would describe a test that is not running.
