@@ -57,7 +57,7 @@
       <EntryHandling>AllEntries</EntryHandling>
       <ExitOnSessionCloseSeconds>30</ExitOnSessionCloseSeconds>
       <IncludeCommission>false</IncludeCommission>
-      <InstrumentOrInstrumentList>NQ 09-26</InstrumentOrInstrumentList>
+      <InstrumentOrInstrumentList>MNQ 09-26</InstrumentOrInstrumentList>
       <IsAggregated>false</IsAggregated>
       <IsExitOnSessionCloseStrategy>true</IsExitOnSessionCloseStrategy>
       <IsFillLimitOnTouch>false</IsFillLimitOnTouch>
@@ -83,14 +83,14 @@
       <ZOrder>-2147483648</ZOrder>
       <FixedContracts>1</FixedContracts>
       <MaxContracts>1</MaxContracts>
-      <TickValueDollars>5</TickValueDollars>
+      <TickValueDollars>0.5</TickValueDollars>
       <UseConfidenceSizing>false</UseConfidenceSizing>
       <FillResolutionMinutes>1</FillResolutionMinutes>
       <TradingHours>Custom</TradingHours>
       <SessionStartTime>93000</SessionStartTime>
       <SessionEndTime>154500</SessionEndTime>
       <FlattenTime>155500</FlattenTime>
-      <MaxDailyLossDollars>1500</MaxDailyLossDollars>
+      <MaxDailyLossDollars>150</MaxDailyLossDollars>
       <DailyProfitTargetDollars>0</DailyProfitTargetDollars>
       <StopForDayOnProfitTarget>false</StopForDayOnProfitTarget>
       <MaxTradesPerDay>0</MaxTradesPerDay>
