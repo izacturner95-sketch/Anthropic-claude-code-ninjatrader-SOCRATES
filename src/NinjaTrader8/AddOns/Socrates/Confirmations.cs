@@ -79,6 +79,17 @@ namespace Socrates.Market
 		/// </summary>
 		public double MinDirectionalMoveAtr = 0.5;
 
+		/// <summary>
+		/// Alternative scaling: the move must be at least this percent of the VIX's own
+		/// level. 0 disables it. Where the ATR term scales to how much the source has been
+		/// moving bar to bar - and collapses when the bars are quiet - this scales to where
+		/// the index is: a VIX at 30 moves more in points than a VIX at 12 for the same
+		/// amount of fear, so half a percent means the same thing in both regimes. On short
+		/// bars, where the ATR term degenerates to the floor, this is the term that still
+		/// means something.
+		/// </summary>
+		public double MinDirectionalMovePercent = 0;
+
 		/// <summary>Strength assigned when direction agrees but the VIX is not reacting from a level.</summary>
 		public double WeakSignalStrength = 0.5;
 
@@ -240,6 +251,11 @@ namespace Socrates.Market
 			// Scaled to the VIX's own volatility, with an absolute floor. Overnight the VIX
 			// hardly moves, and a threshold set for the cash session refuses everything.
 			double threshold = Math.Max(settings.MinDirectionalMove, lastAtr * settings.MinDirectionalMoveAtr);
+
+			// The level-scaled term, where it is in use. All three compose as a max, so each
+			// can be zeroed independently and the strictest active one decides.
+			if (settings.MinDirectionalMovePercent > 0)
+				threshold = Math.Max(threshold, lastClose * settings.MinDirectionalMovePercent / 100.0);
 
 			moveSamples++;
 			double moveAbs = Math.Abs(move);

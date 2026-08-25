@@ -504,6 +504,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// a fixed number set for the cash session is unreachable overnight.
 				VixMinDirectionalMove = 0.02;
 				VixMinDirectionalMoveAtr = 0.5;
+				VixMinDirectionalMovePercent = 0;
 				VixKeyLevelTolerance = 0.35;
 
 				// 0 derives the limit from the bar period, which is right for the index and
@@ -739,6 +740,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 						Mode = VixMode,
 						MinDirectionalMove = VixMinDirectionalMove,
 						MinDirectionalMoveAtr = VixMinDirectionalMoveAtr,
+						MinDirectionalMovePercent = VixMinDirectionalMovePercent,
 						KeyLevelTolerance = VixKeyLevelTolerance,
 						// 0 derives it from the bar period, which suits the index. VX needs a
 						// number of its own - see the parameter's description.
@@ -3778,8 +3780,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 					// The reverse failure, and the easier one to miss: a gate that lets
 					// everything through still looks like a working confirmation.
 					if (vix.ThresholdMax <= VixMinDirectionalMove)
-						Print(string.Format("      NOTE: the ATR term never bound - the {0:N2} floor was the whole test. The VIX's own ATR is smaller than expected.",
+					{
+						Print(string.Format("      NOTE: the scaling terms never bound - the {0:N2} floor was the whole test.",
 							VixMinDirectionalMove));
+						Print("            The VIX's ATR sits below the floor at this bar size. Set 'VIX min move");
+						Print("            (% of VIX)' - it scales to the index's level rather than bar volatility,");
+						Print("            so it does not collapse on quiet bars.");
+					}
 				}
 				else if (vix.RejectedNoData > 0)
 				{
@@ -4300,21 +4307,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public double VixMinDirectionalMoveAtr { get; set; }
 
 		[NinjaScriptProperty]
+		[Range(0, 10)]
+		[Display(Name = "VIX min move (% of VIX)", Description = "Non-ATR scaling: the move must be at least this percent of the VIX's own level - 0.4 means 0.06 points at VIX 15 and 0.12 at VIX 30. 0 disables it. The three thresholds compose as a max, so the strictest active one decides. Use this where the ATR term degenerates: on short bars the VIX's ATR sits below the floor and the summary says so.", GroupName = "7. Step 5 - VIX", Order = 6)]
+		public double VixMinDirectionalMovePercent { get; set; }
+
+		[NinjaScriptProperty]
 		[Range(0.01, 10)]
-		[Display(Name = "VIX key level tolerance", Description = "How close the VIX must be to one of its levels to count as reacting from it. Only used in Strict mode.", GroupName = "7. Step 5 - VIX", Order = 6)]
+		[Display(Name = "VIX key level tolerance", Description = "How close the VIX must be to one of its levels to count as reacting from it. Only used in Strict mode.", GroupName = "7. Step 5 - VIX", Order = 7)]
 		public double VixKeyLevelTolerance { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, 1440)]
-		[Display(Name = "VIX max data age (minutes)", Description = "How old the last VIX bar may be and still confirm. 0 derives it from the bar period, which suits the ^VIX index - it either publishes or is shut. VX futures are different: the contract is open nearly 23 hours but a bar only forms when someone trades, and overnight VX can go well over an hour without a print. 90 is sized for that.", GroupName = "7. Step 5 - VIX", Order = 7)]
+		[Display(Name = "VIX max data age (minutes)", Description = "How old the last VIX bar may be and still confirm. 0 derives it from the bar period, which suits the ^VIX index - it either publishes or is shut. VX futures are different: the contract is open nearly 23 hours but a bar only forms when someone trades, and overnight VX can go well over an hour without a print. 90 is sized for that.", GroupName = "7. Step 5 - VIX", Order = 8)]
 		public int VixMaxDataAgeMinutes { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "VIX skip when quiet", Description = "When the VIX has traded and then gone quiet past the age limit, skip step 5 rather than refuse the setup - the same judgement step 6 makes about a shut equity market. A source with nothing to say is not evidence against a trade, and refusing on staleness turns every thin overnight hour into a blanket ban. A symbol that has never produced a bar still fails loudly: that is a feed problem, not a quiet one.", GroupName = "7. Step 5 - VIX", Order = 8)]
+		[Display(Name = "VIX skip when quiet", Description = "When the VIX has traded and then gone quiet past the age limit, skip step 5 rather than refuse the setup - the same judgement step 6 makes about a shut equity market. A source with nothing to say is not evidence against a trade, and refusing on staleness turns every thin overnight hour into a blanket ban. A symbol that has never produced a bar still fails loudly: that is a feed problem, not a quiet one.", GroupName = "7. Step 5 - VIX", Order = 9)]
 		public bool VixSkipWhenQuiet { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "VIX file", Description = "Full path to a CSV supplying the VIX, replacing the platform series entirely. Blank uses the platform. Rows are 'timestamp,open,high,low,close', and 'timestamp,close' also works. Timestamps may be epoch seconds, epoch milliseconds, or a date-time string - one carrying a zone is honoured, one without is read as UTC. This is how step 5 gets a history longer than the current VX contract has existed.", GroupName = "7. Step 5 - VIX", Order = 9)]
+		[Display(Name = "VIX file", Description = "Full path to a CSV supplying the VIX, replacing the platform series entirely. Blank uses the platform. Rows are 'timestamp,open,high,low,close', and 'timestamp,close' also works. Timestamps may be epoch seconds, epoch milliseconds, or a date-time string - one carrying a zone is honoured, one without is read as UTC. This is how step 5 gets a history longer than the current VX contract has existed.", GroupName = "7. Step 5 - VIX", Order = 10)]
 		public string VixFile { get; set; }
 
 		[NinjaScriptProperty]
