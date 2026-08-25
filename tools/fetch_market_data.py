@@ -31,6 +31,7 @@ testable one, and testable beats unmeasured.
 import argparse
 import os
 import sys
+from datetime import datetime, timedelta
 from collections import Counter
 
 # The Magnificent 7, plus the VIX. Order matches the strategy's default
@@ -44,17 +45,26 @@ def safe_name(symbol):
     return symbol.replace("^", "").replace("/", "-").replace("=", "-")
 
 
-def fetch(symbol, interval, period, prepost):
+def fetch(symbol, interval, period, start, end, prepost):
     import yfinance as yf
 
-    frame = yf.download(
-        symbol,
+    # A date range and a period are alternatives; the range wins when given.
+    # yfinance treats end as exclusive, so a day is added upstream to make the
+    # dates in the prompt mean what a person expects them to mean.
+    kwargs = dict(
         interval=interval,
-        period=period,
         prepost=prepost,
         auto_adjust=False,
         progress=False,
     )
+
+    if start:
+        kwargs["start"] = start
+        kwargs["end"] = end
+    else:
+        kwargs["period"] = period
+
+    frame = yf.download(symbol, **kwargs)
 
     if frame is None or frame.empty:
         return None
@@ -102,6 +112,81 @@ def write(frame, path):
     return written, hours
 
 
+# How far back Yahoo serves each bar size for free. Requests beyond this come
+# back empty, which without a warning is indistinguishable from a typo.
+INTRADAY_REACH_DAYS = {
+    "1m": 30, "2m": 60, "5m": 60, "15m": 60, "30m": 60,
+    "90m": 60, "60m": 730, "1h": 730,
+}
+
+
+def parse_day(text):
+    """YYYY-MM-DD, or None if it is not one."""
+    try:
+        return datetime.strptime(text.strip(), "%Y-%m-%d")
+    except (ValueError, AttributeError):
+        return None
+
+
+def check_reach(interval, start):
+    """Say up front when the range asks for more than Yahoo serves."""
+    reach = INTRADAY_REACH_DAYS.get(interval)
+
+    if reach is None or start is None:
+        return
+
+    days_back = (datetime.now() - start).days
+
+    if days_back > reach:
+        sys.stderr.write(
+            "WARNING: %s bars only reach back about %d days on Yahoo, and %s is %d days ago.\n"
+            "         Expect missing data at the start of the range. For older history use\n"
+            "         --interval 1d, which reaches back decades.\n"
+            % (interval, reach, start.strftime("%Y-%m-%d"), days_back))
+
+
+def prompt_for_range():
+    """Ask for dates when double-clicked. Enter keeps the last-60-days default."""
+    sys.stderr.write("\nDate range, as YYYY-MM-DD YYYY-MM-DD (for example 2026-06-01 2026-08-20).\n")
+    sys.stderr.write("Press Enter for the default: the last 60 days.\n> ")
+    sys.stderr.flush()
+
+    try:
+        typed = sys.stdin.readline().strip()
+    except (EOFError, KeyboardInterrupt):
+        return None, None
+
+    if not typed:
+        return None, None
+
+    parts = typed.replace(" to ", " ").split()
+    start = parse_day(parts[0]) if len(parts) >= 1 else None
+    end = parse_day(parts[1]) if len(parts) >= 2 else None
+
+    if start is None:
+        sys.stderr.write("Could not read a date from %r - using the last 60 days instead.\n" % typed)
+        return None, None
+
+    return start, end
+
+
+def prompt_for_symbols():
+    """Ask which tickers to fetch when double-clicked. Enter keeps the default set."""
+    sys.stderr.write("\nWhich tickers? Separate with spaces (for example: ^VIX NVDA TSLA).\n")
+    sys.stderr.write("Press Enter for the default: %s\n> " % " ".join(DEFAULT_SYMBOLS))
+    sys.stderr.flush()
+
+    try:
+        typed = sys.stdin.readline().strip()
+    except (EOFError, KeyboardInterrupt):
+        return DEFAULT_SYMBOLS
+
+    if not typed:
+        return DEFAULT_SYMBOLS
+
+    return typed.replace(",", " ").upper().split()
+
+
 def default_out():
     """Where a NinjaTrader user most likely wants these, offered as the default."""
     return os.path.join(os.path.expanduser("~"), "Documents", "NinjaTrader 8", "SocratesData")
@@ -134,6 +219,11 @@ def main(argv=None):
                         help="symbols to fetch (default: ^VIX and the Magnificent 7)")
     parser.add_argument("--interval", default="5m",
                         help="bar size: 1m, 5m, 15m, 1h, 1d (default 5m)")
+    parser.add_argument("--start", metavar="YYYY-MM-DD",
+                        help="first day to fetch. With --end, an exact date range; "
+                             "prompted for on a double-click")
+    parser.add_argument("--end", metavar="YYYY-MM-DD",
+                        help="last day to fetch, inclusive (default: today)")
     parser.add_argument("--period", default="60d",
                         help="how far back: 7d, 60d, 1y, 5y, max (default 60d, "
                              "which is as much 5-minute history as Yahoo serves)")
@@ -147,6 +237,42 @@ def main(argv=None):
     if not out:
         sys.stderr.write("error: no output directory given.\n")
         return 1
+
+    start = parse_day(args.start) if args.start else None
+    end = parse_day(args.end) if args.end else None
+
+    if args.start and start is None:
+        sys.stderr.write("error: could not read --start %r as YYYY-MM-DD.\n" % args.start)
+        return 1
+
+    if args.end and end is None:
+        sys.stderr.write("error: could not read --end %r as YYYY-MM-DD.\n" % args.end)
+        return 1
+
+    # Double-click flow: nothing on the command line, so ask for the rest too.
+    if args.out is None:
+        if args.symbols is parser.get_default("symbols"):
+            args.symbols = prompt_for_symbols()
+
+        if start is None:
+            start, end = prompt_for_range()
+
+    if start is not None and end is None:
+        end = datetime.now()
+
+    if start is not None and end < start:
+        sys.stderr.write("error: the range runs backwards (%s to %s).\n"
+                         % (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")))
+        return 1
+
+    if start is not None:
+        check_reach(args.interval, start)
+        sys.stderr.write("Range: %s to %s, %s bars.\n"
+                         % (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), args.interval))
+
+    # yfinance treats end as exclusive; add the day back so ours is inclusive.
+    start_arg = start.strftime("%Y-%m-%d") if start else None
+    end_arg = (end + timedelta(days=1)).strftime("%Y-%m-%d") if start else None
 
     try:
         import yfinance  # noqa: F401
@@ -162,10 +288,16 @@ def main(argv=None):
     failures = 0
 
     for symbol in args.symbols:
+        # The volatility index needs its caret; "VIX" alone is a different Yahoo
+        # symbol. Typing it bare is the likeliest mistake, so correct it aloud.
+        if symbol.upper() == "VIX":
+            sys.stderr.write("NOTE: treating VIX as ^VIX, the index.\n")
+            symbol = "^VIX"
+
         path = os.path.join(out, safe_name(symbol) + ".csv")
 
         try:
-            frame = fetch(symbol, args.interval, args.period, not args.no_prepost)
+            frame = fetch(symbol, args.interval, args.period, start_arg, end_arg, not args.no_prepost)
         except Exception as error:
             sys.stderr.write("%-8s FAILED: %s\n" % (symbol, error))
             failures += 1
