@@ -1212,6 +1212,15 @@ data, and agreement between them is not an achievable standard.** Verify it on a
 trade: both runs log the setup transitions with the level name and price
 (`Sweep BuySide of PriorDayLow @ ...`) — the prices will not match at the same timestamp.
 
+**The mitigation, since the data difference itself cannot be removed:** the strategy now has
+`Live entries only` (group 2, off by default, ON in the two live cash templates). The engine
+still builds its levels and evaluates every setup on the loaded history, but orders submit
+only on real-time data. Enabling or re-enabling then paints nothing, the chart carries only
+fills the account took, and the summary's live-session block is the account's ledger. The
+recompute still disagrees with the session — it always will — but it no longer overwrites the
+picture with trades nobody took. Leave the switch off in the Strategy Analyzer, where
+everything is historical and it would trade nothing.
+
 Use replay for what only it can test — order handling, fills, the stop actually resting in
 the market, the enable handover — and judge the session's trades on their own. Signal
 validation belongs to the backtest, comparisons belong to distributions, never to
