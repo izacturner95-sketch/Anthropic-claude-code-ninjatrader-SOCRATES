@@ -1147,6 +1147,37 @@ document was seventeen trades and it was noise.
 
 ---
 
+## The cash configuration, revised: 2.38 with the out-of-sample third at 2.31
+
+Found by accident. A hand panel drifted from the recorded baseline in three places, its book
+came out better, and the shadow run that was meant to test step 5 exposed the difference.
+Isolation then took two runs:
+
+| | In (Jun 14 – Aug 18) | Out (Mar 13 – Jun 14) | Combined | Drawdown |
+|---|---|---|---|---|
+| Baseline: merge 0.45, R:R 1.2, start 09:30 | 2.19 / $381 | 1.98 / $257 | 2.13 / 139 trades | $3,630 |
+| **Revised: merge 0.15, R:R 1.0, start 09:45** | **2.41 / $441** | **2.31 / $349** | **2.38 / 137 trades** | **$3,450** |
+
+**The improvement holds on the three months nothing was tuned on**, and degrades less across
+the split (2.41 → 2.31 against 2.19 → 1.98). That is what earns it the template, and it is
+the only reason a three-parameter accident got adopted rather than filed under noise.
+
+**`Min reward:risk` is not part of the improvement.** Re-run at 1.2 on the same panel and
+window: 2.44 against 2.41 on the identical 92 trades, six setups changing target. The
+plateau measured at ATR 8 holds at ATR 6. The template keeps 1.0 because that is the value
+the five-month combined book was measured with, and its slightly earlier targets showed
+slightly lower drawdown in both windows where the comparison exists.
+
+**So the earning pair is `Level merge (ATR)` 0.15 and session start 09:45, jointly and
+unattributed.** Merge 0.15 was measured inert at ATR 8 — at ATR 6 every ATR-scaled distance
+is smaller and the interaction is plausibly real, but no run separates the two, and part of
+the gap to the old baseline may also be provider data revision since it was measured. The
+self-contained out-of-sample split above does not depend on that comparison.
+
+Both live cash templates now carry this configuration exactly.
+
+---
+
 ## Step 5 on the cash session, third measurement: still sampling
 
 An optimizer-derived step 5 — Strict mode, 12-bar lookback, a live threshold (0.03 to 0.74

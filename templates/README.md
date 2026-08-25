@@ -2,7 +2,7 @@
 
 | File | For |
 |---|---|
-| `SocratesNQ - Cash session.xml` | **The live cash configuration** — NQ, ATR 6, continuations only, no confirmations, no files. PF 2.13 over 139 trades, out-of-sample third at 1.98. |
+| `SocratesNQ - Cash session.xml` | **The live cash configuration** — NQ, ATR 6, merge 0.15, start 09:45, continuations only, no confirmations, no files. PF 2.38 over 137 trades, out-of-sample third at 2.31. |
 | `SocratesNQ - Cash session MNQ.xml` | The same book on MNQ: tick value 0.50 and the daily cap scaled to $150 so the budget check refuses the same setups. |
 | `SocratesNQ - Overnight.xml` | The overnight configuration. Its 4.48 is near-wholly in-sample; the base system measured 1.93. |
 | `SocratesNQ - Cash session (feed only).xml` | Historical record of the feed-only experiment. Superseded by the no-confirmation configuration. |

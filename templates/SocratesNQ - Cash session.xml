@@ -87,7 +87,7 @@
       <UseConfidenceSizing>false</UseConfidenceSizing>
       <FillResolutionMinutes>1</FillResolutionMinutes>
       <TradingHours>Custom</TradingHours>
-      <SessionStartTime>93000</SessionStartTime>
+      <SessionStartTime>94500</SessionStartTime>
       <SessionEndTime>154500</SessionEndTime>
       <FlattenTime>155500</FlattenTime>
       <MaxDailyLossDollars>1500</MaxDailyLossDollars>
@@ -125,7 +125,7 @@
       <RequireConfirmationClose>true</RequireConfirmationClose>
       <StopBufferAtr>0.25</StopBufferAtr>
       <TargetBufferTicks>4</TargetBufferTicks>
-      <MinRewardRisk>1.2</MinRewardRisk>
+      <MinRewardRisk>1</MinRewardRisk>
       <TargetRMultiple>2</TargetRMultiple>
       <MinStopTicks>20</MinStopTicks>
       <MaxStopTicks>245</MaxStopTicks>
