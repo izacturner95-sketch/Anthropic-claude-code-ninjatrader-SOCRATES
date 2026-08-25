@@ -1147,6 +1147,39 @@ document was seventeen trades and it was noise.
 
 ---
 
+## Step 5 on the cash session, third measurement: still sampling
+
+An optimizer-derived step 5 — Strict mode, 12-bar lookback, a live threshold (0.03 to 0.74
+in force, so the scaling term genuinely bound this time) — run blocking on the tuning window,
+against the ATR-6 baseline on the identical window:
+
+| | Baseline, step 5 off | Step 5 strict |
+|---|---|---|
+| Trades | 91 | 35 |
+| Win rate | 45% | 46% |
+| Profit factor | 2.19 | 2.27 |
+| Net | +$34,660 | +$13,225 |
+| **Per trade** | **$380.88** | **$377.86** |
+| Refused, by subtraction | | 56 trades at **$382.77** each |
+| Drawdown | $3,635 | $1,825 |
+
+**Kept $377.86, refused $382.77, book $380.88.** Three numbers within $5 of each other. The
+filter removed 62% of the trades and 62% of the money and changed nothing about quality —
+the same verdict the shadow run gave the degenerate version, now reproduced with a healthy
+threshold, Strict mode, and an optimizer's best effort behind it. Profit factor moving 2.19
+to 2.27 on 35 trades is noise.
+
+The drawdown halving is exposure, not selection: half the trades means half the concurrent
+losses, and trading smaller buys the same thing without a filter's model risk.
+
+**Three independent forms of step 5 have now been measured on this session — file-based,
+degenerate-threshold, and optimized-strict — and all three sample.** Whatever the VIX knows
+about the overnight session, it does not know it about deep-penetration continuations during
+regular hours. This question is closed; further optimizer passes on step 5's parameters are
+searching noise.
+
+---
+
 ## Break even and trailing stops
 
 Added, shipped **off**, and unmeasured. Both are exit management rather than entry logic, and
