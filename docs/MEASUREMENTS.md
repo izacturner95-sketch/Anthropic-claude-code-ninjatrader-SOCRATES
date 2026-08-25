@@ -1172,8 +1172,36 @@ to 2.27 on 35 trades is noise.
 The drawdown halving is exposure, not selection: half the trades means half the concurrent
 losses, and trading smaller buys the same thing without a filter's model risk.
 
-**Three independent forms of step 5 have now been measured on this session — file-based,
-degenerate-threshold, and optimized-strict — and all three sample.** Whatever the VIX knows
+### The fourth form: level-scaled threshold, in shadow
+
+`^VIX`, Directional, 6-bar lookback, ATR term zeroed, `VIX min move (% of VIX)` at 0.2 — the
+loosest value of a planned 0.2/0.4/0.6 sweep, run in shadow over the five months. Criteria
+set before the run: refused must average at most half of kept, kept must hold at least 60
+trades, on both windows.
+
+| | Trades | Won | Per trade |
+|---|---|---|---|
+| Kept | 21 | 52% | $551.19 |
+| Refused | 116 | 47% | $385.09 |
+| Book | 137 | 48% | $410.55 |
+
+**Fails both criteria at the loosest setting, which cancels the rest of the sweep** — 0.4
+and 0.6 are strictly tighter and can only shrink the kept set further. Kept is 21 trades
+against a 60-trade bar, and refused is 70% of kept against a 50% bar. The $166 premium
+rests where 21-trade premiums always rest: the run's best trade is +15.28R, roughly $9,700
+at mean risk, and if it sits in the kept set the other twenty average $94 — a quarter of
+the book. Win rates are 52% against 47%, so it is winner size, not selection, once again.
+
+**The deeper finding is in the rejection profile: 171 of 172 rejections are direction, not
+magnitude.** Over a 12-minute horizon the VIX's direction disagrees with these trades 81%
+of the time, and the disagreeing trades still made $385 each. No threshold arithmetic fixes
+that — magnitude knobs cannot rescue a test whose directional premise does not hold here.
+
+**Four forms measured — file-based, degenerate, optimized-strict, level-scaled shadow —
+and none selects.**
+
+**(Superseded count: three forms of step 5 have now been measured on this session — file-based,
+degenerate-threshold, and optimized-strict — and all three sample.)** Whatever the VIX knows
 about the overnight session, it does not know it about deep-penetration continuations during
 regular hours. This question is closed; further optimizer passes on step 5's parameters are
 searching noise.
