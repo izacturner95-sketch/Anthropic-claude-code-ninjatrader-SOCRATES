@@ -142,6 +142,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int totalZoneTouches;
 		private int totalEntries;
 
+		// The live session's own ledger: only fills whose trade closed while the
+		// strategy was on real-time data. The historical replay at enable never
+		// touches these, so they are the account's session, not the chart's.
+		private int liveTrades;
+		private int liveWon;
+		private double livePnL;
+		private bool liveEntriesOnlyLogged;
+
 		// Break-even and trailing state. The stop set at entry is kept separately from the
 		// stop currently live, because risk in points is measured against the original -
 		// once the stop has moved, the distance to it is no longer what was risked.
@@ -364,6 +372,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// strategy on a day it has already 'lost' silences it until the session rolls.
 				// That has cost two full live days. On is the old behaviour, for a restart
 				// mid-session where the replay approximates trades that genuinely happened.
+				LiveEntriesOnly = false;
 				CarryReplayRiskState = false;
 
 				// --- Step 1: context ---
@@ -1657,6 +1666,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private void SubmitEntry(SetupResult result, double confirmationStrength)
 		{
+			// The whole point of the switch: no orders against historical bars, so enabling
+			// or re-enabling paints nothing and the chart carries only fills the account
+			// actually took. The engine still runs the full sequence on history - levels,
+			// swings, setups - it just stops short of the order.
+			if (LiveEntriesOnly && State != State.Realtime)
+			{
+				if (!liveEntriesOnlyLogged)
+				{
+					liveEntriesOnlyLogged = true;
+					Log("Live entries only: historical setups are evaluated but not traded. First skipped here.");
+				}
+
+				return;
+			}
+
 			bool bullish = result.Direction == TradeDirection.Long;
 			double entryPrice = Close[0];
 			double stopPrice = result.StopPrice;
@@ -1853,8 +1877,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 				risk.RecordClosedTrade(trade.ProfitCurrency);
 				RecordTradeResult(trade.ProfitCurrency);
 
-				Log(string.Format("Trade closed: {0:C}. Day P/L {1:C}, trades {2}, consecutive losses {3}.",
-					trade.ProfitCurrency, risk.DailyRealisedPnL, risk.TradesToday, risk.ConsecutiveLosses));
+				// Drained while on real-time data means the exit filled live. That is the
+				// account's ledger, kept apart from anything the historical replay simulated.
+				if (State == State.Realtime)
+				{
+					liveTrades++;
+					livePnL += trade.ProfitCurrency;
+
+					if (trade.ProfitCurrency > 0)
+						liveWon++;
+
+					Log(string.Format("Trade closed LIVE: {0:C}. Session {1} trade(s), {2} won, {3:C} total. Day P/L {4:C}, consecutive losses {5}.",
+						trade.ProfitCurrency, liveTrades, liveWon, livePnL, risk.DailyRealisedPnL, risk.ConsecutiveLosses));
+				}
+				else
+				{
+					Log(string.Format("Trade closed (historical): {0:C}. Day P/L {1:C}, trades {2}, consecutive losses {3}.",
+						trade.ProfitCurrency, risk.DailyRealisedPnL, risk.TradesToday, risk.ConsecutiveLosses));
+				}
 			}
 
 			// Re-issued each bar for the same reason as the flatten, and logged once so a
@@ -2181,6 +2221,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			stopTicksMax = 0;
 			stopTicksSum = 0;
 			longSetups = shortSetups = longEntries = shortEntries = 0;
+			liveTrades = liveWon = 0;
+			livePnL = 0;
+			liveEntriesOnlyLogged = false;
 			cashSweeps = nightSweeps = cashShifts = nightShifts = 0;
 			cashRetests = nightRetests = cashSetups = nightSetups = 0;
 			reversalEntries = continuationEntries = 0;
@@ -2244,6 +2287,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Calculate       : {0}, bars required {1}", Calculate, BarsRequiredToTrade));
 			Print(string.Format("  Trading hours   : {0}", DescribeSession()));
 			Print(string.Format("  Sizing          : {0} contract(s), max {1}, daily loss cap {2}", FixedContracts, MaxContracts, DescribeDailyCap()));
+
+			if (LiveEntriesOnly)
+				Print("  Entries         : LIVE ONLY - historical bars are evaluated, never traded.");
 			WarnOnTickValueMismatch();
 			Print(string.Format("  Stop            : {0}", DescribeStop()));
 			Print(string.Format("  Step 5 (VIX)    : {0}", DescribeVixSource()));
@@ -3306,6 +3352,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (revTrades + contTrades == 0)
 				return;
 
+			if (liveTrades > 0 || LiveEntriesOnly)
+			{
+				Print("  --- this session, live fills only ---");
+
+				if (liveTrades == 0)
+				{
+					Print("  No live trades yet. Everything above is the historical replay, which the");
+					Print("  account never traded.");
+				}
+				else
+				{
+					Print(string.Format("  Live            : {0} trade(s), {1} won ({2:P0}), net {3:C}{4}",
+						liveTrades, liveWon, liveTrades > 0 ? (double)liveWon / liveTrades : 0, livePnL,
+						liveTrades > 0 ? string.Format(", {0:C} each", livePnL / liveTrades) : string.Empty));
+
+					if (!LiveEntriesOnly)
+						Print("  Everything else above mixes these with the historical replay. This block is the account.");
+				}
+			}
+
 			Print("  --- by setup kind ---");
 			PrintKind("Reversals", revTrades, revWon, revGrossProfit, revGrossLoss);
 			PrintKind("Continuations", contTrades, contWon, contGrossProfit, contGrossLoss);
@@ -4016,6 +4082,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, int.MaxValue)]
 		[Display(Name = "Max consecutive losses", Description = "0 disables.", GroupName = "2. Risk", Order = 8)]
 		public int MaxConsecutiveLosses { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Live entries only", Description = "No orders against historical bars. The engine still builds levels and evaluates setups on the loaded history, but entries submit only on real-time data - so enabling or re-enabling paints no simulated trades, the chart shows only fills the account took, and the summary describes the session rather than the chart. Leave OFF in the Strategy Analyzer: a backtest is entirely historical and would take no trades at all. The banner says when it is on.", GroupName = "2. Risk", Order = 8)]
+		public bool LiveEntriesOnly { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Carry replay risk state", Description = "Off by default. Enabling a strategy replays every loaded bar and fills trades against them; those fills are simulated but still count towards the day's trade cap and still arm the consecutive-loss halt, so a strategy enabled on a morning the replay scores as two losses will refuse every real setup until the session rolls, silently. Off discards that state at the switch to live data and logs what it discarded. Turn it on only when restarting mid-session and you want the replay's approximation of trades that really happened to keep counting.", GroupName = "2. Risk", Order = 9)]

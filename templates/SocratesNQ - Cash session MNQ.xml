@@ -95,6 +95,7 @@
       <StopForDayOnProfitTarget>false</StopForDayOnProfitTarget>
       <MaxTradesPerDay>0</MaxTradesPerDay>
       <MaxConsecutiveLosses>2</MaxConsecutiveLosses>
+      <LiveEntriesOnly>true</LiveEntriesOnly>
       <CarryReplayRiskState>false</CarryReplayRiskState>
       <AtrPeriod>6</AtrPeriod>
       <SwingStrength>4</SwingStrength>
