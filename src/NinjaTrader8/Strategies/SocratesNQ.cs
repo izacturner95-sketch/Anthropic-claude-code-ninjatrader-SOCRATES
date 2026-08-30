@@ -155,6 +155,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// once the stop has moved, the distance to it is no longer what was risked.
 		private double entryStopPrice;
 		private double liveStopPrice;
+		private double activeTargetPrice;
+		private DateTime activeEntryTime;
+		private int opposingExitTrades;
 		private bool breakEvenArmed;
 		private bool trailArmed;
 		private double trailExtreme;
@@ -467,6 +470,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				TrailTriggerR = 0;
 				TrailTriggerTicks = 0;
 				TrailDistanceTicks = 0;
+
+				// Off and unmeasured. Majors-only defaults on so that the first experiment
+				// is the selective form rather than one exit per freshly confirmed swing.
+				ExitOnOpposingLevel = false;
+				OpposingLevelMajorOnly = true;
 
 				// --- Step 5: VIX ---
 				//
@@ -930,6 +938,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (Position.MarketPosition == MarketPosition.Flat)
 			{
 				activeEntryLabel = null;
+				activeTargetPrice = 0;
 				breakEvenArmed = false;
 				trailArmed = false;
 				trailExtreme = 0;
@@ -1786,6 +1795,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			activeEntryLabel = label;
+			activeTargetPrice = targetPrice;
+			activeEntryTime = Time[0];
 			risk.RecordEntry();
 			dayEntries++;
 			totalEntries++;
@@ -2255,6 +2266,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			shadowBreadthVetoTrades = shadowBreadthVetoWon = 0;
 			shadowCleanTrades = shadowCleanWon = 0;
 			breakEvenArmedTrades = trailArmedTrades = 0;
+			opposingExitTrades = 0;
 			shadowTotalTrades = 0;
 			shadowTotalPnL = 0;
 			shadowVixVetoPnL = shadowBreadthVetoPnL = shadowCleanPnL = 0;
@@ -2411,6 +2423,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StopBufferAtr, TargetBufferTicks, MinRewardRisk));
 			Print(string.Format("  Break even   : {0}", DescribeBreakEven()));
 			Print(string.Format("  Trail        : {0}", DescribeTrail()));
+			Print(string.Format("  Opposing exit: {0}", !ExitOnOpposingLevel ? "off"
+				: OpposingLevelMajorOnly ? "on, major levels only" : "on, any new level in the path"));
 
 			Print("===================================================================");
 		}
@@ -2514,6 +2528,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (riskPoints <= 0)
 				return;
 
+			// A level that appeared - or was re-tested, which refreshes its timestamp -
+			// after this entry, sitting between price and the target, is structure the
+			// target was chosen without knowing about. The trade's premise included a
+			// clear path; the path is no longer clear.
+			if (ExitOnOpposingLevel && activeTargetPrice > 0)
+			{
+				Level blocker = FindOpposingLevel(isLong);
+
+				if (blocker != null)
+				{
+					opposingExitTrades++;
+					Log(string.Format("Opposing level in the path - closing. {0} at {1:N2} appeared {2:HH:mm}, target {3:N2}.",
+						blocker.Name, blocker.Price, blocker.Created, activeTargetPrice));
+					CloseCurrentPosition();
+					return;
+				}
+			}
+
 			// How far the trade has gone in its favour at its best point this bar.
 			double favourable = isLong ? High[0] - entry : entry - Low[0];
 			double favourableTicks = favourable / TickSize;
@@ -2579,6 +2611,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 			newStop = Instrument.MasterInstrument.RoundToTickSize(newStop);
 			liveStopPrice = newStop;
 			SetStopLoss(activeEntryLabel, CalculationMode.Price, newStop, false);
+		}
+
+		/// <summary>
+		/// The first level created or refreshed after entry that sits between the current
+		/// close and the target. Levels behind price are spent, and levels beyond the
+		/// target were already accepted as the destination's far side.
+		/// </summary>
+		private Level FindOpposingLevel(bool isLong)
+		{
+			if (nq == null)
+				return null;
+
+			foreach (Level level in nq.Levels.All)
+			{
+				if (level.Created <= activeEntryTime)
+					continue;
+
+				if (OpposingLevelMajorOnly && !level.IsMajor)
+					continue;
+
+				bool inPath = isLong
+					? level.Price > Close[0] && level.Price < activeTargetPrice
+					: level.Price < Close[0] && level.Price > activeTargetPrice;
+
+				if (inPath)
+					return level;
+			}
+
+			return null;
 		}
 
 		/// <summary>
@@ -3984,6 +4045,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (setup != null && setup.StopsFromRetest + setup.StopsFromSwing + setup.StopsFromSweepExtreme > 0)
 			{
+			if (opposingExitTrades > 0)
+				Print(string.Format("  Closed on an opposing level: {0} trade(s). Each is logged with the level's name.",
+					opposingExitTrades));
+
 			if (breakEvenArmedTrades > 0 || trailArmedTrades > 0)
 			{
 				Print(string.Format("  Stop moved after entry: break even on {0} trades, trail armed on {1}.",
@@ -4277,6 +4342,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, 5000)]
 		[Display(Name = "Trail distance (ticks)", Description = "How far behind the best price reached the stop follows. 0 turns trailing off entirely regardless of the triggers. Tight enough and it exits every winner early; wide enough and it never fires before the target does.", GroupName = "6b. Exits - Break even and trail", Order = 5)]
 		public int TrailDistanceTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Exit on opposing level", Description = "Close the trade when support or resistance appears between price and the target after entry. The target was chosen against the levels known at entry; a level forming - or being re-tested, which refreshes it - inside that path is structure the premise did not include. Unmeasured, ships off. Every trigger is logged with the level's name, and the summary counts them.", GroupName = "6b. Exits - Break even and trail", Order = 6)]
+		public bool ExitOnOpposingLevel { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Opposing level: majors only", Description = "Only exit for reference levels the whole market can see - prior day and week, pivots, the opening and overnight ranges - not for every swing or order block the book picks up. Swings form constantly; with this off, expect far more early exits.", GroupName = "6b. Exits - Break even and trail", Order = 7)]
+		public bool OpposingLevelMajorOnly { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "VIX mode", Description = "Off, Directional (VIX must move inversely), or Strict (must also react from a key level).", GroupName = "7. Step 5 - VIX", Order = 0)]

@@ -1239,10 +1239,24 @@ searching noise.
 
 ---
 
-## Break even and trailing stops
+## Break even, trailing stops, and the opposing-level exit
 
-Added, shipped **off**, and unmeasured. Both are exit management rather than entry logic, and
-this document has no evidence about either.
+Added, shipped **off**, and unmeasured. All three are exit management rather than entry
+logic, and this document has no evidence about any of them.
+
+**The opposing-level exit** closes the trade when support or resistance appears between
+price and the target after entry — the target was chosen against the levels known at entry,
+so a level forming inside that path is structure the premise did not include. Two details
+define it: a *re-tested* level counts as appearing, because a merge refreshes its
+timestamp and a re-test is precisely the evidence of opposition the exit is looking for;
+and `majors only` defaults on, because swings confirm constantly and the unselective form
+would exit most winners within a few bars. Every trigger logs the level's name and the
+summary counts them.
+
+The prediction to test it against: this strategy's profit is concentrated in trades beyond
++3R, and any early exit trims those first. The honest comparison is the same window with
+the switch off, judged on net and the R distribution — not on the comfort of the exits it
+took.
 
 **Both accept two triggers and fire on whichever comes first.** `Break even at (R)` /
 `(ticks)`, and `Trail from (R)` / `(ticks)`. Zero disables that half; both zero disables the
