@@ -66,6 +66,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// than on disk, so it behaves the same in a backtest and live.
 		private RelativeStrengthConfirmation relStrength;
 		private int idxRelStrength = -1;
+		private int idxHtf = -1;
 
 		private FileSeries vixFile;
 		private FileSeries[] leaderFiles = new FileSeries[0];
@@ -249,8 +250,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private readonly List<bool> pendingVixVeto = new List<bool>();
 		private readonly List<bool> pendingBreadthVeto = new List<bool>();
+		private readonly List<bool> pendingHtfVeto = new List<bool>();
 		private bool shadowVixVetoed;
 		private bool shadowBreadthVetoed;
+		private bool shadowHtfVetoed;
+		private int shadowHtfVetoTrades;
+		private int shadowHtfVetoWon;
+		private double shadowHtfVetoPnL;
+		private int totalRejectedHtf;
+		private int htfConfirmed;
+		private int htfSkippedWarmup;
 
 		private int shadowVixVetoTrades;
 		private int shadowVixVetoWon;
@@ -375,6 +384,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// strategy on a day it has already 'lost' silences it until the session rolls.
 				// That has cost two full live days. On is the old behaviour, for a restart
 				// mid-session where the replay approximates trades that genuinely happened.
+				UseHtfFilter = false;
+				HtfBarMinutes = 15;
+				HtfMaPeriod = 50;
 				LiveEntriesOnly = false;
 				CarryReplayRiskState = false;
 
@@ -698,6 +710,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 				{
 					AddDataSeries(BarsPeriodType.Minute, 240);
 					idxFourHour = next++;
+				}
+
+				// The higher-timeframe filter's own series. Same instrument, coarser bars;
+				// the moving average lives on it so the bias question is asked at the
+				// timeframe it is about, not approximated from primary bars.
+				if (UseHtfFilter)
+				{
+					AddDataSeries(BarsPeriodType.Minute, HtfBarMinutes);
+					idxHtf = next++;
 				}
 
 				// A file replaces the platform series entirely. Adding both would put the
@@ -1191,6 +1212,56 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			shadowVixVetoed = false;
 			shadowBreadthVetoed = false;
+			shadowHtfVetoed = false;
+
+			// The higher-timeframe bias, asked first because it is the cheapest question:
+			// one close against one moving average on the strategy's own instrument. Longs
+			// need the HTF close above its average, shorts below. No data dependency beyond
+			// NQ itself, so it behaves identically in a backtest and live.
+			if (UseHtfFilter && idxHtf >= 0)
+			{
+				if (CurrentBars[idxHtf] < HtfMaPeriod + 1)
+				{
+					htfSkippedWarmup++;
+
+					if (VerboseLogging)
+						Log("HTF filter skipped: not enough higher-timeframe bars yet.");
+				}
+				else
+				{
+					double htfClose = Closes[idxHtf][0];
+					double htfAverage = EMA(BarsArray[idxHtf], HtfMaPeriod)[0];
+					bool bullishBias = htfClose > htfAverage;
+					bool htfAgrees = result.Direction == TradeDirection.Long ? bullishBias : !bullishBias;
+
+					if (!htfAgrees)
+					{
+						totalRejectedHtf++;
+
+						string detail = string.Format(
+							"HTF {0}-minute close {1:N2} is {2} its EMA({3}) at {4:N2} - bias is {5}, setup is {6}.",
+							HtfBarMinutes, htfClose, bullishBias ? "above" : "below", HtfMaPeriod, htfAverage,
+							bullishBias ? "long" : "short", result.Direction);
+
+						if (!ShadowConfirmations)
+						{
+							Log(string.Format("Setup rejected by the HTF filter. {0} | {1}", detail, result.Detail));
+							return;
+						}
+
+						shadowHtfVetoed = true;
+						Log("HTF filter disagreed but shadow mode is on - taking the trade anyway. " + detail);
+					}
+					else
+					{
+						htfConfirmed++;
+
+						if (VerboseLogging)
+							Log(string.Format("HTF filter passed: {0}-minute bias {1}.", HtfBarMinutes,
+								bullishBias ? "long" : "short"));
+					}
+				}
+			}
 
 			// Step 5.
 			if (vix != null)
@@ -1813,6 +1884,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			pendingIsContinuation.Add(result.IsContinuation);
 			pendingVixVeto.Add(shadowVixVetoed);
 			pendingBreadthVeto.Add(shadowBreadthVetoed);
+			pendingHtfVeto.Add(shadowHtfVetoed);
 
 			double plannedReward = targetPrice > 0 ? Math.Abs(targetPrice - entryPrice) : 0;
 			double plannedRisk = Math.Abs(entryPrice - stopPrice);
@@ -2225,6 +2297,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			totalSweeps = totalShifts = totalZoneTouches = totalEntries = 0;
 			totalBlockedByRisk = totalRejectedVix = totalRejectedBreadth = totalRejectedStop = totalRejectedSizing = 0;
+			totalRejectedHtf = htfConfirmed = htfSkippedWarmup = 0;
 			totalRejectedRiskBudget = 0;
 
 			Array.Clear(blockReasonCounts, 0, blockReasonCounts.Length);
@@ -2261,9 +2334,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			pendingVixVeto.Clear();
 			pendingBreadthVeto.Clear();
+			pendingHtfVeto.Clear();
 			shadowVixVetoed = shadowBreadthVetoed = false;
 			shadowVixVetoTrades = shadowVixVetoWon = 0;
 			shadowBreadthVetoTrades = shadowBreadthVetoWon = 0;
+			shadowHtfVetoTrades = shadowHtfVetoWon = 0;
+			shadowHtfVetoPnL = 0;
 			shadowCleanTrades = shadowCleanWon = 0;
 			breakEvenArmedTrades = trailArmedTrades = 0;
 			opposingExitTrades = 0;
@@ -2308,6 +2384,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("  Stop            : {0}", DescribeStop()));
 			Print(string.Format("  Step 5 (VIX)    : {0}", DescribeVixSource()));
 			Print(string.Format("  Step 6 (leaders): {0}", DescribeBreadthSource()));
+			Print(string.Format("  HTF filter      : {0}", UseHtfFilter
+				? string.Format("with-trend, {0}-minute EMA({1})", HtfBarMinutes, HtfMaPeriod)
+				: "off"));
 			Print(string.Format("  Fills           : {0}, slippage {1} tick(s)",
 				FillResolutionMinutes > 0
 					? string.Format("orders submitted on a {0}-minute series", FillResolutionMinutes)
@@ -3080,6 +3159,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (index == idxFourHour)
 				return "NQ 4-hour";
 
+			if (index == idxHtf)
+				return string.Format("NQ HTF {0}-minute", HtfBarMinutes);
+
 			if (index == idxVix)
 				return "VIX " + VixSymbol;
 
@@ -3225,6 +3307,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 				pendingBreadthVeto.RemoveAt(0);
 			}
 
+			bool htfVetoed = false;
+
+			if (pendingHtfVeto.Count > 0)
+			{
+				htfVetoed = pendingHtfVeto[0];
+				pendingHtfVeto.RemoveAt(0);
+			}
+
 			// A trade can be vetoed by both steps, so it lands in both buckets. The clean
 			// bucket is the counterfactual: what the run would have been with the filters on.
 			// The totals are kept separately because summing the two veto buckets counts
@@ -3250,7 +3340,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 					shadowBreadthVetoWon++;
 			}
 
-			if (!vixVetoed && !breadthVetoed)
+			if (htfVetoed)
+			{
+				shadowHtfVetoTrades++;
+				shadowHtfVetoPnL += profitDollars;
+
+				if (profitDollars > 0)
+					shadowHtfVetoWon++;
+			}
+
+			if (!vixVetoed && !breadthVetoed && !htfVetoed)
 			{
 				shadowCleanTrades++;
 				shadowCleanPnL += profitDollars;
@@ -3621,7 +3720,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!ShadowConfirmations)
 				return;
 
-			int total = shadowCleanTrades + shadowVixVetoTrades + shadowBreadthVetoTrades;
+			int total = shadowCleanTrades + shadowVixVetoTrades + shadowBreadthVetoTrades + shadowHtfVetoTrades;
 
 			if (total == 0)
 			{
@@ -3651,6 +3750,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 					shadowBreadthVetoTrades > 0 ? string.Format(", {0:C} each", shadowBreadthVetoPnL / shadowBreadthVetoTrades) : string.Empty));
 			}
 
+			if (UseHtfFilter)
+			{
+				Print(string.Format("  HTF would refuse      : {0} trades, {1} won, {2:C}{3}",
+					shadowHtfVetoTrades, shadowHtfVetoWon, shadowHtfVetoPnL,
+					shadowHtfVetoTrades > 0 ? string.Format(", {0:C} each", shadowHtfVetoPnL / shadowHtfVetoTrades) : string.Empty));
+			}
+
 			// The verdict, stated so it cannot be read the flattering way by accident. A
 			// filter earns its place by refusing trades that lost money; refusing trades that
 			// made money is a cost, however sound the reasoning behind it sounds.
@@ -3658,11 +3764,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 			// two, and adding the buckets reported it as two - along with its profit twice.
 			double refusedPnL = shadowTotalPnL - shadowCleanPnL;
 			int refusedTrades = shadowTotalTrades - shadowCleanTrades;
+			int vetoSum = shadowVixVetoTrades + shadowBreadthVetoTrades + shadowHtfVetoTrades;
 
-			if (shadowVixVetoTrades > 0 && shadowBreadthVetoTrades > 0)
+			if (vetoSum > refusedTrades)
 			{
-				Print(string.Format("  Both steps objected   : {0} trades (counted once below, twice above)",
-					shadowVixVetoTrades + shadowBreadthVetoTrades - refusedTrades));
+				Print(string.Format("  Multiple objections   : {0} trades objected to more than once (counted once below)",
+					vetoSum - refusedTrades));
 			}
 
 			if (refusedTrades == 0)
@@ -3966,6 +4073,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 			}
 
+			if (UseHtfFilter)
+				Print(string.Format("  HTF filter           : {0}   (confirmed {1}{2})",
+					totalRejectedHtf, htfConfirmed,
+					htfSkippedWarmup > 0 ? string.Format(", {0} skipped in warm-up", htfSkippedWarmup) : string.Empty));
+
 			Print(string.Format("  Stop band            : {0}", totalRejectedStop));
 			Print(string.Format("  Sizing               : {0}", totalRejectedSizing));
 			Print(string.Format("  Daily risk budget    : {0}", totalRejectedRiskBudget));
@@ -4158,6 +4270,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[NinjaScriptProperty]
 		[Display(Name = "Live entries only", Description = "No orders against historical bars. The engine still builds levels and evaluates setups on the loaded history, but entries submit only on real-time data - so enabling or re-enabling paints no simulated trades, the chart shows only fills the account took, and the summary describes the session rather than the chart. Leave OFF in the Strategy Analyzer: a backtest is entirely historical and would take no trades at all. The banner says when it is on.", GroupName = "2. Risk", Order = 8)]
 		public bool LiveEntriesOnly { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "HTF filter", Description = "Only trade with the higher timeframe: longs need the HTF close above its EMA, shorts below. Same instrument, coarser bars, no external data - it behaves identically in a backtest and live. Ships off and unmeasured; test it in shadow mode first and judge refused against kept per trade.", GroupName = "8b. Higher timeframe", Order = 0)]
+		public bool UseHtfFilter { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(3, 1440)]
+		[Display(Name = "HTF bar minutes", Description = "The higher timeframe's bar size. 15 asks about the last few hours' drift; 60 asks about the day.", GroupName = "8b. Higher timeframe", Order = 1)]
+		public int HtfBarMinutes { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(2, 500)]
+		[Display(Name = "HTF EMA period", Description = "Bars in the average the HTF close is compared against. 50 on 15-minute bars is roughly two cash sessions of memory.", GroupName = "8b. Higher timeframe", Order = 2)]
+		public int HtfMaPeriod { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Carry replay risk state", Description = "Off by default. Enabling a strategy replays every loaded bar and fills trades against them; those fills are simulated but still count towards the day's trade cap and still arm the consecutive-loss halt, so a strategy enabled on a morning the replay scores as two losses will refuse every real setup until the session rolls, silently. Off discards that state at the switch to live data and logs what it discarded. Turn it on only when restarting mid-session and you want the replay's approximation of trades that really happened to keep counting.", GroupName = "2. Risk", Order = 9)]

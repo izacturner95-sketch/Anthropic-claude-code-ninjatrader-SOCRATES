@@ -1258,6 +1258,26 @@ The prediction to test it against: this strategy's profit is concentrated in tra
 the switch off, judged on net and the R distribution — not on the comfort of the exits it
 took.
 
+**Tested, and it lost.** Reported materially worse than the same window with the switch off
+(run details not archived). That is the outcome the prediction above named: the exits all
+look sensible individually, and collectively they trim the +3R tail that pays for
+everything. It stays off, and the general rule it reinforces is now twice-measured — this
+strategy's edge lives in letting winners run, and every mechanism that cuts a winner short
+for comfort has cost money when tested (the 09:25 flatten, and now this).
+
+## The higher-timeframe filter
+
+Added afterwards, shipped **off**, unmeasured. Longs need the HTF close above its EMA,
+shorts below — one close against one average on the strategy's own instrument, so it has no
+external data, no staleness, and behaves identically in a backtest and live. Defaults:
+15-minute bars, EMA 50.
+
+It is a different bet from the exits that failed: it filters *entries* by regime rather
+than cutting winners, so it does not attack the +3R tail directly. The measured history
+still argues caution — every entry filter tested on this session (four forms of step 5, two
+of step 6) has sampled rather than selected. Shadow mode supports it as a third row, so the
+kept-versus-refused comparison costs one run.
+
 **Both accept two triggers and fire on whichever comes first.** `Break even at (R)` /
 `(ticks)`, and `Trail from (R)` / `(ticks)`. Zero disables that half; both zero disables the
 feature. R is measured against the stop set at entry, not the one currently resting — once a
