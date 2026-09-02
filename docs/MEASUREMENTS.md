@@ -1321,7 +1321,20 @@ have had time to place. On 2-minute bars that window is small; it is not zero.
 
 ---
 
-## Market Replay against the backtest: a third of the money
+## A third of the money — source under review
+
+**Provisional.** The figures below were first read as a live Market Replay session against
+the backtest, and the fill-realism explanation was written on that basis. They were then
+clarified as Strategy Analyzer backtest data. Which run they came from decides what they
+mean, and the fill-realism reading only survives one of the readings:
+
+- **Analyzer with `Tick Replay` on** — then this *is* the tick-accurate backtest, and
+  everything below stands: bar-level fills were flattering the strategy by a factor of three.
+- **Analyzer on ordinary historical bars** — then fills are not the explanation at all, the
+  two runs differ by window or configuration, and the gap is about robustness across periods
+  rather than execution.
+
+Do not cite this section until that is resolved.
 
 | | Backtest (5 months) | Market Replay |
 |---|---|---|
