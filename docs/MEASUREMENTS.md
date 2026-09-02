@@ -1321,6 +1321,55 @@ have had time to place. On 2-minute bars that window is small; it is not zero.
 
 ---
 
+## Market Replay against the backtest: a third of the money
+
+| | Backtest (5 months) | Market Replay |
+|---|---|---|
+| Trades | 137 | 144 |
+| Win rate | 48% | **41.7%** |
+| Per trade | $411 | **$141** |
+| In R (mean risk $638) | 0.64R | **0.22R** |
+| Net | $56,245 | $20,305 |
+| Largest drawdown | $3,450 | $4,270 |
+
+**Replay returned 34% of the backtest's per-trade value.** Still profitable — roughly 1.4
+profit factor against 2.38 — but a third of what the backtest promised, and the backtest is
+what every parameter on this strategy was chosen against.
+
+**Win rate explains only part of it.** At ~2R targets against 1R stops, dropping 48% to
+41.7% costs 43% of expectancy — the observed loss is 66%. So the trades are not merely
+hitting less often; the winners are smaller or the losers larger as well. That is the
+signature of fill realism: a trade that comes within a tick of target and reverses is a full
+loss in replay where a 1-minute-bar backtest with one tick of slippage may have filled it,
+and stops resting in a real queue slip further than the model's single tick.
+
+**Two causes are mixed here and cannot be separated from this run alone** — replay data is
+NinjaTrader's recorded feed rather than the provider's history (see the section below), and
+replay fills on ticks rather than on 1-minute bars. Only one of them is fixable, and the
+next run separates them.
+
+**The long/short split is noise.** 38.7% over 62 longs against 43.9% over 82 shorts is
+z = 0.63. Nothing to act on, and the short skew (57% of trades) matches the backtest's.
+
+### What this costs everything above
+
+Every parameter on this strategy — ATR 6, merge 0.15, penetration 24, the stop band — was
+selected under a fill model that flatters it, and flatters *tight stops* most of all: a stop
+that survives on 1-minute bars with one tick of slippage may not survive on ticks. The
+adopted configuration beat its alternatives under that model; whether it still does under a
+realistic one is unmeasured.
+
+So the priority is no longer finding a better parameter. It is **re-running the backtest with
+`Tick Replay` on and `Order Fill Resolution` set to High**, then re-checking the one
+comparison that matters — the adopted configuration against the old baseline — under fills
+that resemble the account's. If the tick-replay backtest lands near $141 a trade, the fill
+model was the gap and it becomes the yardstick for everything after. If it still says $411,
+the gap is the replay *data*, and the honest forward expectation sits between the two.
+
+**Forward expectation is now $141 a trade, not $411**, until that run says otherwise.
+
+---
+
 ## Why Market Replay and its own recompute disagree
 
 First replay session: **+$1,430 while playing, −$440 when the strategy was toggled off and on
