@@ -164,6 +164,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double activeTargetPrice;
 		private DateTime activeEntryTime;
 		private int opposingExitTrades;
+		private int targetBackstopExits;
+		private double targetBackstopGiveUpTicks;
 		private bool breakEvenArmed;
 		private bool trailArmed;
 		private double trailExtreme;
@@ -490,6 +492,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				// Off and unmeasured. Majors-only defaults on so that the first experiment
 				// is the selective form rather than one exit per freshly confirmed swing.
+				TargetTouchBackstop = false;
 				ExitOnOpposingLevel = false;
 				OpposingLevelMajorOnly = true;
 
@@ -2352,6 +2355,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			shadowCleanTrades = shadowCleanWon = 0;
 			breakEvenArmedTrades = trailArmedTrades = 0;
 			opposingExitTrades = 0;
+			targetBackstopExits = 0;
+			targetBackstopGiveUpTicks = 0;
 			entrySlipSamples = 0;
 			entrySlipTicksSum = 0;
 			entrySlipTicksMax = 0;
@@ -2661,6 +2666,34 @@ namespace NinjaTrader.NinjaScript.Strategies
 					opposingExitTrades++;
 					Log(string.Format("Opposing level in the path - closing. {0} at {1:N2} appeared {2:HH:mm}, target {3:N2}.",
 						blocker.Name, blocker.Price, blocker.Created, activeTargetPrice));
+					CloseCurrentPosition();
+					return;
+				}
+			}
+
+			// The target is a limit order, and a limit only fills if the market trades
+			// through it with the queue ahead cleared. A backtest fills it the moment price
+			// reaches the price, which is why every Analyzer run in this project reported a
+			// third more money than Market Replay did. If the bar reached the target and the
+			// position is still open at its close, the limit did not fill - so leave at
+			// market rather than carrying a finished trade back down to the stop.
+			//
+			// When the limit does fill this never runs: the position is already flat and
+			// ManageOpenPosition is not reached. So it costs nothing where the backtest was
+			// right, and only acts where the backtest was lying.
+			if (TargetTouchBackstop && activeTargetPrice > 0)
+			{
+				bool touched = isLong ? High[0] >= activeTargetPrice : Low[0] <= activeTargetPrice;
+
+				if (touched)
+				{
+					double giveUp = Math.Abs(activeTargetPrice - Close[0]) / TickSize;
+					targetBackstopExits++;
+					targetBackstopGiveUpTicks += giveUp;
+
+					Log(string.Format("Target {0:N2} was touched and the limit did not fill - leaving at market. Close {1:N2}, giving up {2:N0} ticks.",
+						activeTargetPrice, Close[0], giveUp));
+
 					CloseCurrentPosition();
 					return;
 				}
@@ -4198,6 +4231,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (setup != null && setup.StopsFromRetest + setup.StopsFromSwing + setup.StopsFromSweepExtreme > 0)
 			{
+			if (targetBackstopExits > 0)
+			{
+				Print(string.Format("  Target touched but the limit did not fill: {0} trade(s), giving up {1:N1} ticks on average.",
+					targetBackstopExits, targetBackstopGiveUpTicks / targetBackstopExits));
+				Print("      In the Strategy Analyzer this is near zero - it fills limits on touch. A large");
+				Print("      count in Market Replay is the backtest-versus-reality gap, measured.");
+			}
+
 			if (entrySlipSamples > 0)
 			{
 				Print(string.Format("  Entry fills landed {0:N1} ticks from the signal price on average, worst {1:N0}.",
@@ -4518,6 +4559,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, 5000)]
 		[Display(Name = "Trail distance (ticks)", Description = "How far behind the best price reached the stop follows. 0 turns trailing off entirely regardless of the triggers. Tight enough and it exits every winner early; wide enough and it never fires before the target does.", GroupName = "6b. Exits - Break even and trail", Order = 5)]
 		public int TrailDistanceTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Target touch backstop", Description = "If a bar reaches the target and the limit order has not filled by that bar's close, leave at market. A limit only fills when the market trades through it; a backtest fills it the moment price arrives, which is the single largest source of disagreement between the Strategy Analyzer and Market Replay. Where the backtest was right this never runs - the position is already flat. Ships off; test it in Market Replay, since the Analyzer cannot see what it fixes.", GroupName = "6b. Exits - Break even and trail", Order = 8)]
+		public bool TargetTouchBackstop { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Exit on opposing level", Description = "Close the trade when support or resistance appears between price and the target after entry. The target was chosen against the levels known at entry; a level forming - or being re-tested, which refreshes it - inside that path is structure the premise did not include. Unmeasured, ships off. Every trigger is logged with the level's name, and the summary counts them.", GroupName = "6b. Exits - Break even and trail", Order = 6)]

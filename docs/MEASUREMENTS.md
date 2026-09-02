@@ -1364,6 +1364,42 @@ buffers, break-even, trailing stops and the opposing-level exit all have to be j
 Market Replay. Entry logic can still be screened in the Analyzer, since entries are the one
 part the two instruments agree on.
 
+### Why a parallel backtest engine is the wrong fix
+
+The obvious response to "the Analyzer lies about fills" is to build an engine that does not.
+It is a trap, for three reasons:
+
+- **Two implementations of the strategy drift.** Every rule here — level merging, sweep
+  adoption, the retest state machine, the risk gates — would exist twice. The moment they
+  disagree, the tester is measuring something that is not the strategy, and nothing in the
+  output would say so. Most of this document's corrections came from small accounting
+  mismatches inside *one* implementation.
+- **The hard part is the part being modelled.** Queue position and limit fills are the
+  single most difficult thing to simulate, and the result would be an approximation of
+  NinjaTrader's approximation, with no way to validate it except against Market Replay —
+  which is already available.
+- **Market Replay is the ground truth and it is free.** It is slow, not inaccurate.
+
+**The better move is to remove the disagreement rather than model it.** The strategy sends
+exactly one order type that behaves differently between the two instruments: the profit
+target's limit. Entries are market or stop orders and stops are stop-market — those fill the
+same way in both. So the divergence has one source, and it can be closed in the strategy.
+
+`Target touch backstop` does that: if a bar reaches the target and the limit has not filled
+by that bar's close, leave at market. Where the backtest was right the position is already
+flat and the code never runs; it acts only where the backtest was lying. With it on, the
+Analyzer and Market Replay should converge, and the Analyzer becomes usable for exit work
+again.
+
+It is not free — the market exit gives up whatever price moved back within the bar, and the
+summary reports that give-up in ticks so the cost is measured rather than assumed. Against
+the alternative it looks cheap: a touched-but-unfilled target currently runs back to the stop
+for a full loss, and the replay win rate is 8 points below the Analyzer's.
+
+**The testing split, until proven otherwise:** entries in the Strategy Analyzer, which is
+fast and agrees with replay on entries; exits in Market Replay, which is the only instrument
+that can see them.
+
 ### The earlier tick run, on its own terms
 
 2026-06-28 to 2026-08-26 — the window tick data reaches.
