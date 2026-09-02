@@ -156,6 +156,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// once the stop has moved, the distance to it is no longer what was risked.
 		private double entryStopPrice;
 		private double liveStopPrice;
+		private double activeSignalPrice;
+		private bool activeRiskCorrected;
+		private int entrySlipSamples;
+		private double entrySlipTicksSum;
+		private double entrySlipTicksMax;
 		private double activeTargetPrice;
 		private DateTime activeEntryTime;
 		private int opposingExitTrades;
@@ -960,6 +965,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				activeEntryLabel = null;
 				activeTargetPrice = 0;
+				activeSignalPrice = 0;
+				activeRiskCorrected = false;
 				breakEvenArmed = false;
 				trailArmed = false;
 				trailExtreme = 0;
@@ -1866,6 +1873,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			activeEntryLabel = label;
+			activeSignalPrice = entryPrice;
+			activeRiskCorrected = false;
 			activeTargetPrice = targetPrice;
 			activeEntryTime = Time[0];
 			risk.RecordEntry();
@@ -2343,6 +2352,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			shadowCleanTrades = shadowCleanWon = 0;
 			breakEvenArmedTrades = trailArmedTrades = 0;
 			opposingExitTrades = 0;
+			entrySlipSamples = 0;
+			entrySlipTicksSum = 0;
+			entrySlipTicksMax = 0;
 			shadowTotalTrades = 0;
 			shadowTotalPnL = 0;
 			shadowVixVetoPnL = shadowBreadthVetoPnL = shadowCleanPnL = 0;
@@ -2606,6 +2618,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (riskPoints <= 0)
 				return;
+
+			// The queued risk was measured from the signal bar's close, because that is all
+			// that exists before an order is sent. The fill lands somewhere else, and under
+			// tick-accurate fills it can land several ticks away - which then shows up as a
+			// stop that "overran" when the stop did exactly what it was told. Corrected once
+			// per trade, against the price actually paid.
+			if (!activeRiskCorrected && pendingRiskDollars.Count > 0)
+			{
+				activeRiskCorrected = true;
+
+				double slipTicks = activeSignalPrice > 0 ? Math.Abs(entry - activeSignalPrice) / TickSize : 0;
+
+				if (slipTicks > 0)
+				{
+					entrySlipSamples++;
+					entrySlipTicksSum += slipTicks;
+
+					if (slipTicks > entrySlipTicksMax)
+						entrySlipTicksMax = slipTicks;
+				}
+
+				double corrected = riskPoints / TickSize * TickValueDollars * Math.Max(1, Position.Quantity);
+				double queued = pendingRiskDollars[pendingRiskDollars.Count - 1];
+				pendingRiskDollars[pendingRiskDollars.Count - 1] = corrected;
+
+				if (VerboseLogging && Math.Abs(corrected - queued) > 0.01)
+					Log(string.Format("Risk corrected to the fill: signal {0:N2}, filled {1:N2} ({2:N1} ticks), risk {3:C} not {4:C}.",
+						activeSignalPrice, entry, slipTicks, corrected, queued));
+			}
 
 			// A level that appeared - or was re-tested, which refreshes its timestamp -
 			// after this entry, sitting between price and the target, is structure the
@@ -4157,6 +4198,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (setup != null && setup.StopsFromRetest + setup.StopsFromSwing + setup.StopsFromSweepExtreme > 0)
 			{
+			if (entrySlipSamples > 0)
+			{
+				Print(string.Format("  Entry fills landed {0:N1} ticks from the signal price on average, worst {1:N0}.",
+					entrySlipTicksSum / entrySlipSamples, entrySlipTicksMax));
+				Print("      R is measured against the price actually paid, so this is already out of the");
+				Print("      numbers above. On bar-level fills it is near zero; under tick fills it is not,");
+				Print("      and before this was corrected it read as stops overrunning.");
+			}
+
 			if (opposingExitTrades > 0)
 				Print(string.Format("  Closed on an opposing level: {0} trade(s). Each is logged with the level's name.",
 					opposingExitTrades));

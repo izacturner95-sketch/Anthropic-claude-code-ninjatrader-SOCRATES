@@ -1321,65 +1321,56 @@ have had time to place. On 2-minute bars that window is small; it is not zero.
 
 ---
 
-## A third of the money — source under review
+## Tick Replay, commission and 2 ticks of slippage
 
-**Provisional.** The figures below were first read as a live Market Replay session against
-the backtest, and the fill-realism explanation was written on that basis. They were then
-clarified as Strategy Analyzer backtest data. Which run they came from decides what they
-mean, and the fill-realism reading only survives one of the readings:
+The honest execution test, 2026-06-28 to 2026-08-26 — the window tick data reaches.
+Against the nearest bar-level run (Jun 14 – Aug 18, same configuration):
 
-- **Analyzer with `Tick Replay` on** — then this *is* the tick-accurate backtest, and
-  everything below stands: bar-level fills were flattering the strategy by a factor of three.
-- **Analyzer on ordinary historical bars** — then fills are not the explanation at all, the
-  two runs differ by window or configuration, and the gap is about robustness across periods
-  rather than execution.
-
-Do not cite this section until that is resolved.
-
-| | Backtest (5 months) | Market Replay |
+| | Tick + commission + slippage 2 | Bar-level |
 |---|---|---|
-| Trades | 137 | 144 |
-| Win rate | 48% | **41.7%** |
-| Per trade | $411 | **$141** |
-| In R (mean risk $638) | 0.64R | **0.22R** |
-| Net | $56,245 | $20,305 |
-| Largest drawdown | $3,450 | $4,270 |
+| Trades | 64 | 92 |
+| Win rate | 50.0% | 46.7% |
+| Profit factor | 2.19 | 2.41 |
+| Per trade | $466 | $441 |
+| **Largest drawdown** | **$6,140** | $3,450 |
+| **Average loss** | **$783** | $588 |
+| **Largest loss** | **$1,516** | $1,180 |
+| Stops that overran | **25 of 64 (39%)** | 10 of 92 (11%) |
 
-**Replay returned 34% of the backtest's per-trade value.** Still profitable — roughly 1.4
-profit factor against 2.38 — but a third of what the backtest promised, and the backtest is
-what every parameter on this strategy was chosen against.
+**The edge survives; the risk profile does not.** Profit factor and per-trade dollars hold
+up under tick fills with commission — 2.19 and $466 against 2.41 and $441, well inside the
+noise of a 64-trade sample. Every risk number gets materially worse: drawdown nearly
+doubles, the average loss rises a third, and the worst single loss exceeds the configured
+maximum stop by 24%.
 
-**Win rate explains only part of it.** At ~2R targets against 1R stops, dropping 48% to
-41.7% costs 43% of expectancy — the observed loss is 66%. So the trades are not merely
-hitting less often; the winners are smaller or the losers larger as well. That is the
-signature of fill realism: a trade that comes within a tick of target and reverses is a full
-loss in replay where a 1-minute-bar backtest with one tick of slippage may have filled it,
-and stops resting in a real queue slip further than the model's single tick.
+**The 39% overrun rate was partly an accounting artifact, now fixed.** Recorded risk was
+measured from the signal bar's close, because that is all that exists before an order is
+sent — but the fill lands elsewhere, and under tick-accurate fills it lands several ticks
+away. That difference was being charged to the stop, so a stop that did exactly what it was
+told read as an overrun. R is now measured against the price actually paid, and the summary
+reports how far fills land from the signal price so the two are never conflated again.
+The bar-level runs are unaffected: their fills sit on the signal bar, so the correction is
+worth ~0 there. **Re-run the tick test on the fixed build before treating 39% as real.**
 
-**Two causes are mixed here and cannot be separated from this run alone** — replay data is
-NinjaTrader's recorded feed rather than the provider's history (see the section below), and
-replay fills on ticks rather than on 1-minute bars. Only one of them is fixable, and the
-next run separates them.
+### What this changes for a funded account
 
-**The long/short split is noise.** 38.7% over 62 longs against 43.9% over 82 shorts is
-z = 0.63. Nothing to act on, and the short skew (57% of trades) matches the backtest's.
+**A single trade lost $1,516 — more than the $1,500 daily cap and 124% of the configured
+$1,225 maximum stop.** The daily loss cap cannot bound a day when one trade can exceed it,
+and the budget check cannot help: it refuses entries whose *intended* risk is too large, and
+this trade's intended risk was within limits. Only the stop band bounds it, and the stop
+band was set under bar-level fills.
 
-### What this costs everything above
+Two ways to close that, and they are different bets:
 
-Every parameter on this strategy — ATR 6, merge 0.15, penetration 24, the stop band — was
-selected under a fill model that flatters it, and flatters *tight stops* most of all: a stop
-that survives on 1-minute bars with one tick of slippage may not survive on ticks. The
-adopted configuration beat its alternatives under that model; whether it still does under a
-realistic one is unmeasured.
+- **Lower `Max stop (ticks)`** so the worst realistic loss fits inside the daily cap. At the
+  observed 24% overshoot, a 245-tick band needs roughly 200 to keep the worst case under
+  $1,225 — and the overnight stop-band sweep found tighter monotonically better, so this may
+  cost nothing.
+- **Raise the daily cap** to cover at least one full-width loss with room to re-enter, if
+  the prop account's own limit allows it.
 
-So the priority is no longer finding a better parameter. It is **re-running the backtest with
-`Tick Replay` on and `Order Fill Resolution` set to High**, then re-checking the one
-comparison that matters — the adopted configuration against the old baseline — under fills
-that resemble the account's. If the tick-replay backtest lands near $141 a trade, the fill
-model was the gap and it becomes the yardstick for everything after. If it still says $411,
-the gap is the replay *data*, and the honest forward expectation sits between the two.
-
-**Forward expectation is now $141 a trade, not $411**, until that run says otherwise.
+Expectations for the live accounts should use the tick numbers, not the bar ones:
+**~$466 a trade, drawdown to $6,000, and single losses past $1,500.**
 
 ---
 
