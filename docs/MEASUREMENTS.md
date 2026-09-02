@@ -1321,9 +1321,52 @@ have had time to place. On 2-minute bars that window is small; it is not zero.
 
 ---
 
-## Tick Replay, commission and 2 ticks of slippage
+## Tick Replay is not a fill test — Market Replay is
 
-The honest execution test, 2026-06-28 to 2026-08-26 — the window tick data reaches.
+Called "the honest execution test" here when it was recorded. **That was wrong**, and the
+error matters because it is the reason five Analyzer runs all agreed with each other and
+disagreed with the account.
+
+- **`Tick Replay`** changes how *indicators calculate* — it feeds historical ticks so
+  per-tick logic can be reconstructed. It does not change fill modelling at all.
+- **`Order Fill Resolution: High`** refines fills onto a finer intrabar series, but still
+  uses backtest fill rules: an order fills if the bar's range reaches its price.
+- **Neither models bid/ask or queue position.** A limit order in any Analyzer run fills
+  whenever price reaches it. That is not how a limit order behaves.
+- **Market Replay** plays recorded market data through the simulation engine with the
+  strategy in real-time state — the same code path as live, and fills that respect the
+  actual book.
+
+So Market Replay is the more accurate instrument, and the Analyzer's agreement across bar,
+tick, commission and slippage variations is not corroboration. It is five measurements of
+the same optimistic fill model.
+
+| | Per trade | Win rate |
+|---|---|---|
+| Analyzer, five configurations | $408–466 | 47–50% |
+| **Market Replay** | **$141** | **41.7%** |
+
+**The forward expectation is $141 a trade.** The strategy remains profitable there — that
+result is on one NQ contract with the risk limits engaged — but at roughly a third of what
+every backtest in this document promised, and every parameter here was selected against the
+optimistic model.
+
+**The likely mechanism is the profit target.** `SetProfitTarget` places a limit order. The
+Analyzer fills it whenever price reaches the price; Market Replay requires the market to
+actually trade through with the queue ahead of it cleared. Trades that touch the target and
+reverse are full losses in replay and full wins in the Analyzer, which produces exactly the
+observed pattern: win rate down 8 points, per-trade down far more than the win rate alone
+explains, entries unaffected.
+
+**The consequence for everything after this:** exit mechanics cannot be tested in the
+Strategy Analyzer, because the Analyzer cannot model the thing that costs the money. Target
+buffers, break-even, trailing stops and the opposing-level exit all have to be judged in
+Market Replay. Entry logic can still be screened in the Analyzer, since entries are the one
+part the two instruments agree on.
+
+### The earlier tick run, on its own terms
+
+2026-06-28 to 2026-08-26 — the window tick data reaches.
 Against the nearest bar-level run (Jun 14 – Aug 18, same configuration):
 
 | | Tick + commission + slippage 2 | Bar-level |
