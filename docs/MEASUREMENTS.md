@@ -1273,10 +1273,30 @@ external data, no staleness, and behaves identically in a backtest and live. Def
 15-minute bars, EMA 50.
 
 It is a different bet from the exits that failed: it filters *entries* by regime rather
-than cutting winners, so it does not attack the +3R tail directly. The measured history
-still argues caution — every entry filter tested on this session (four forms of step 5, two
-of step 6) has sampled rather than selected. Shadow mode supports it as a third row, so the
-kept-versus-refused comparison costs one run.
+than cutting winners, so it does not attack the +3R tail directly.
+
+**Measured, one shadow run (Jun 28 – Aug 25, 83 trades): it selects against the strategy.**
+
+| | Trades | Won | Per trade |
+|---|---|---|---|
+| Kept (with the 15-minute EMA-50 bias) | 49 | 51% | $372.65 |
+| Refused (against the bias) | 34 | 44% | **$460.00** |
+| Book | 83 | 48% | $408.43 |
+
+The trades the filter would refuse are the *better* ones, by $87 each. In hindsight the
+mechanism reads cleanly: a 24-point break that holds against the prevailing 15-minute drift
+is the violent, regime-turning kind, and those run furthest. With-trend filtering keeps the
+drift-following breaks and throws away the turns.
+
+The tempting inversion — trade only against the HTF bias — is refused for the third time on
+the same grounds as step 6's and the VIX's: a mechanism read off 34 observations after the
+fact is fitting. The filter stays off; the entry-filter score on this session is now seven
+forms tested, none adopted. The continuation setup appears to be its own regime filter — a
+break that holds is the evidence, and everything layered on top has either sampled it or
+selected against it.
+
+One incidental positive: this run's window extends a week past every tuning window
+(Aug 18–25), and the book held 2.36 / $408 a trade through it.
 
 **Both accept two triggers and fire on whichever comes first.** `Break even at (R)` /
 `(ticks)`, and `Trail from (R)` / `(ticks)`. Zero disables that half; both zero disables the
