@@ -164,6 +164,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double activeTargetPrice;
 		private DateTime activeEntryTime;
 		private int opposingExitTrades;
+		private int clampedStops;
+		private double clampedGiveUpTicks;
 		private int targetBackstopExits;
 		private double targetBackstopGiveUpTicks;
 		private bool breakEvenArmed;
@@ -493,6 +495,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// Off and unmeasured. Majors-only defaults on so that the first experiment
 				// is the selective form rather than one exit per freshly confirmed swing.
 				// Off: the structural stop and target are what every measurement here used.
+				ClampStopToMax = false;
 				StaticStopTicks = 0;
 				StaticTargetTicks = 0;
 
@@ -1808,6 +1811,28 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
+			// Two ways to honour the maximum. Refusing keeps the stop where the structure put
+			// it and simply declines trades that need more room than the account can lend.
+			// Clamping takes the trade anyway with the stop pulled in to the maximum, which
+			// caps the loss but moves the stop off the level it was defending - so price can
+			// reach through it and continue in the trade's favour. That is the trade being
+			// made here, and the count of clamped stops is reported so its cost is visible.
+			if (ClampStopToMax && stopDistanceTicks > MaxStopTicks)
+			{
+				clampedGiveUpTicks += stopDistanceTicks - MaxStopTicks;
+				clampedStops++;
+
+				stopPrice = bullish
+					? entryPrice - MaxStopTicks * TickSize
+					: entryPrice + MaxStopTicks * TickSize;
+
+				if (VerboseLogging)
+					Log(string.Format("Stop clamped from {0:N0} to {1} ticks - no longer at the structural level. {2}",
+						stopDistanceTicks, MaxStopTicks, result.Detail));
+
+				stopDistanceTicks = MaxStopTicks;
+			}
+
 			if (stopDistanceTicks > MaxStopTicks)
 			{
 				dayRejectedStop++;
@@ -2375,6 +2400,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			shadowCleanTrades = shadowCleanWon = 0;
 			breakEvenArmedTrades = trailArmedTrades = 0;
 			opposingExitTrades = 0;
+			clampedStops = 0;
+			clampedGiveUpTicks = 0;
 			targetBackstopExits = 0;
 			targetBackstopGiveUpTicks = 0;
 			entrySlipSamples = 0;
@@ -4269,6 +4296,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (setup != null && setup.StopsFromRetest + setup.StopsFromSwing + setup.StopsFromSweepExtreme > 0)
 			{
+			if (clampedStops > 0)
+			{
+				Print(string.Format("  Stops clamped to the maximum: {0} trade(s), pulled in {1:N0} ticks on average.",
+					clampedStops, clampedGiveUpTicks / clampedStops));
+				Print("      Each of those would have been refused with clamping off. They are extra trades");
+				Print("      carrying a stop that is not at their structural level - check the win rate.");
+			}
+
 			if (targetBackstopExits > 0)
 			{
 				Print(string.Format("  Target touched but the limit did not fill: {0} trade(s), giving up {1:N1} ticks on average.",
@@ -4567,6 +4602,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(1, 2000)]
 		[Display(Name = "Max stop (ticks)", Description = "Backstop only - 'Max setup risk (ATR)' is the real ceiling and works in the units the market moves in. The banner warns if this contradicts the daily loss limit.", GroupName = "6. Step 4 - Retest", Order = 9)]
 		public int MaxStopTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Clamp stop to max (not refuse)", Description = "Changes what 'Max stop (ticks)' does. Off, a setup needing a wider stop is refused and the structural stop is never violated. On, the trade is taken with the stop pulled in to the maximum - the loss is capped, but the stop no longer sits below the level the setup was defending, so price can reach through it and then continue the way the trade wanted. Trade count rises; win rate is expected to fall.", GroupName = "6. Step 4 - Retest", Order = 12)]
+		public bool ClampStopToMax { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, 5000)]

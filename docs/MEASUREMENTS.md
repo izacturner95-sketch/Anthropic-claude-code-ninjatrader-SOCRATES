@@ -1239,6 +1239,38 @@ searching noise.
 
 ---
 
+## Three ways to cap the loss at 180 ticks
+
+They are not the same thing, and on the tick run's stop distribution they land very
+differently — roughly 41% of setups imply a stop wider than 180 ticks.
+
+| Setting | What happens to a setup needing 250 ticks | Trade count |
+|---|---|---|
+| `Max stop (ticks)` = 180 | Refused | **~25% fewer** |
+| `Max stop` 180 + `Clamp stop to max` | Taken, stop pulled to 180 | Unchanged, plus the ~24 the 245 band was already refusing |
+| `Static stop (ticks)` = 180 | Taken at 180 — **and a setup needing 50 ticks also gets 180** | Unchanged |
+
+**Refusing keeps the stop honest.** It stays below the level the setup was defending, which
+is what made it a setup. The cost is a quarter of the trades, and specifically the
+wide-structure ones.
+
+**Clamping caps the loss without losing the trade**, but the stop is no longer at the
+structural level — price can reach through it and then continue the way the trade wanted.
+Expect the win rate to fall; the question is whether it falls less than the loss cap saves.
+The summary reports how many stops were clamped and how far they were pulled in.
+
+**Static is the wrong tool for this.** It sets *every* stop to 180, so the 30% of setups
+implying under 100 ticks would have their risk more than doubled. It answers "make all
+trades the same size," not "cap the big ones."
+
+**Note what the cap does and does not guarantee.** 180 ticks is $900 of *intended* risk. The
+worst loss at the 245 band was $1,516 against $1,225 intended — 24% past it — because stops
+slip. A 180-tick cap should be expected to produce worst cases near $1,100, not $900. It
+does bring the single-trade worst case back under the $1,500 daily cap, which the current
+setting does not.
+
+---
+
 ## Static stop and target
 
 Fixed tick distances from the entry, replacing the structural ones. Both ship at 0, meaning
