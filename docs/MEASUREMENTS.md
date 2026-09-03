@@ -1352,7 +1352,26 @@ have had time to place. On 2-minute bars that window is small; it is not zero.
 
 ---
 
-## Tick Replay is not a fill test — Market Replay is
+## Which instrument to trust: settled by the account
+
+Two claims were made here in sequence and both were wrong. First that the Analyzer's tick
+run was "the honest execution test"; then, when Market Replay disagreed, that Market Replay
+must be the accurate one because it models fills. **Comparison against actual account
+results settled it: the Strategy Analyzer with `Tick Replay` on matches live most closely —
+closer than Market Replay.**
+
+So the limit-fill theory below is at best a second-order effect, and the reasoning that
+produced it was backwards: it started from which instrument *ought* to be more realistic and
+worked toward the data, rather than from the account outward. Market Replay's $141 a trade
+is the outlier, not the truth. The mechanism that makes replay diverge is not established
+and no longer matters much — what matters is that **the tick-replay Analyzer run is the
+yardstick**, and its numbers are the ones to plan against.
+
+The `Target touch backstop` remains available and remains untested. Its rationale is weaker
+now: it was built to close a gap that appears to be replay's artifact rather than the
+account's reality.
+
+### The superseded reasoning, kept because the mechanics are still true
 
 Called "the honest execution test" here when it was recorded. **That was wrong**, and the
 error matters because it is the reason five Analyzer runs all agreed with each other and
