@@ -492,6 +492,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				// Off and unmeasured. Majors-only defaults on so that the first experiment
 				// is the selective form rather than one exit per freshly confirmed swing.
+				// Off: the structural stop and target are what every measurement here used.
+				StaticStopTicks = 0;
+				StaticTargetTicks = 0;
+
 				TargetTouchBackstop = false;
 				ExitOnOpposingLevel = false;
 				OpposingLevelMajorOnly = true;
@@ -1777,6 +1781,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double entryPrice = Close[0];
 			double stopPrice = result.StopPrice;
 			double targetPrice = result.TargetPrice;
+
+			// Fixed distances from the entry, replacing the structural ones. Each is
+			// independent: a static stop with a structural target is a legitimate pair, and
+			// so is the reverse. The band check below still applies to a static stop, so a
+			// value outside it refuses every setup - the banner warns about that at startup
+			// rather than leaving a silent shutout in the funnel.
+			if (StaticStopTicks > 0)
+				stopPrice = bullish
+					? entryPrice - StaticStopTicks * TickSize
+					: entryPrice + StaticStopTicks * TickSize;
+
+			if (StaticTargetTicks > 0)
+				targetPrice = bullish
+					? entryPrice + StaticTargetTicks * TickSize
+					: entryPrice - StaticTargetTicks * TickSize;
+
 			double stopDistanceTicks = Math.Abs(entryPrice - stopPrice) / TickSize;
 
 			if (stopDistanceTicks < MinStopTicks)
@@ -2399,6 +2419,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 				Print("  Entries         : LIVE ONLY - historical bars are evaluated, never traded.");
 			WarnOnTickValueMismatch();
 			Print(string.Format("  Stop            : {0}", DescribeStop()));
+
+			if (StaticStopTicks > 0 || StaticTargetTicks > 0)
+			{
+				Print(string.Format("  Static exits    : stop {0}, target {1}",
+					StaticStopTicks > 0 ? string.Format("{0} ticks ({1:C})", StaticStopTicks, StaticStopTicks * TickValueDollars) : "structural",
+					StaticTargetTicks > 0 ? string.Format("{0} ticks ({1:C})", StaticTargetTicks, StaticTargetTicks * TickValueDollars) : "structural"));
+
+				if (StaticStopTicks > 0 && (StaticStopTicks < MinStopTicks || StaticStopTicks > MaxStopTicks))
+				{
+					Print(string.Format("  WARNING: a {0}-tick static stop sits outside the {1}-{2} band, so every setup will",
+						StaticStopTicks, MinStopTicks, MaxStopTicks));
+					Print("           be refused. Widen the band or change the static stop.");
+				}
+
+				if (StaticStopTicks > 0 && StaticTargetTicks > 0)
+					Print(string.Format("                    Fixed reward:risk of {0:N2}. 'Min reward:risk' is not consulted.",
+						(double)StaticTargetTicks / StaticStopTicks));
+			}
 			Print(string.Format("  Step 5 (VIX)    : {0}", DescribeVixSource()));
 			Print(string.Format("  Step 6 (leaders): {0}", DescribeBreadthSource()));
 			Print(string.Format("  HTF filter      : {0}", UseHtfFilter
@@ -4529,6 +4567,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(1, 2000)]
 		[Display(Name = "Max stop (ticks)", Description = "Backstop only - 'Max setup risk (ATR)' is the real ceiling and works in the units the market moves in. The banner warns if this contradicts the daily loss limit.", GroupName = "6. Step 4 - Retest", Order = 9)]
 		public int MaxStopTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 5000)]
+		[Display(Name = "Static stop (ticks)", Description = "Fixed stop distance from the entry, replacing the structural stop. 0 keeps the structural one - below the previous low plus the ATR buffer. Independent of the static target, so either can be used alone. The min/max stop band still applies, so a value outside it refuses every setup.", GroupName = "6. Step 4 - Retest", Order = 10)]
+		public int StaticStopTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 5000)]
+		[Display(Name = "Static target (ticks)", Description = "Fixed target distance from the entry, replacing the swing-derived target. 0 keeps the structural one. Note this bypasses 'Min reward:risk' entirely - that parameter chooses among swings, and there is no choosing left to do once the distance is fixed.", GroupName = "6. Step 4 - Retest", Order = 11)]
+		public int StaticTargetTicks { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, 20)]

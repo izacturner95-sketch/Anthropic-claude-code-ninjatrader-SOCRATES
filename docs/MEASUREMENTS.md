@@ -1239,6 +1239,37 @@ searching noise.
 
 ---
 
+## Static stop and target
+
+Fixed tick distances from the entry, replacing the structural ones. Both ship at 0, meaning
+off, and each works alone — a static stop with a swing-derived target is a legitimate pair,
+and so is the reverse.
+
+Three things to know before testing them:
+
+- **The min/max stop band still applies to a static stop.** A value outside it refuses every
+  setup. The banner warns at startup rather than leaving a silent shutout in the funnel.
+- **A static target bypasses `Min reward:risk` entirely.** That parameter chooses among
+  candidate swings; there is no choosing left once the distance is fixed.
+- **A static stop removes the risk variation this document keeps warning about.** Risk
+  currently ranges tenfold between trades, which is why R multiples are not comparable here
+  and every judgement is made on profit factor and per-trade dollars. Fix the stop and R
+  becomes meaningful again — and the daily budget check stops refusing wide setups, since
+  every setup is the same width.
+
+**What the measured evidence predicts.** The structural stop sits below the level the trade
+is defending, which is what makes the setup a setup; a fixed distance ignores where that
+level is. Against that, ATR 6 beat ATR 8 and 16 partly by *tightening* stops, and the
+overnight band sweep found 200 monotonically better than 250 and 300 — so shorter stops have
+consistently helped here. The honest expectation is that a static stop trades a worse stop
+*location* for a better stop *size*, and which wins is not predictable from anything measured
+so far.
+
+Test in Market Replay, not the Analyzer: these are exit mechanics, and the Analyzer cannot
+model the fills that decide them.
+
+---
+
 ## Break even, trailing stops, and the opposing-level exit
 
 Added, shipped **off**, and unmeasured. All three are exit management rather than entry
